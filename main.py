@@ -1,45 +1,24 @@
-from fastapi import FastAPI, UploadFile, File
-from fastapi.responses import HTMLResponse
-import os
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
-# ایجاد پوشه آپلود اگر وجود ندارد
-if not os.path.exists("uploads"):
-    os.makedirs("uploads")
+# لیست دامنه‌هایی که اجازه دارند (برای همه: ['*'])
+origins = [
+    "http://localhost:3000",
+    "https://dilagh01.github.io",
+    "https://homkar.ir",
+    "*"  # برای تست، ولی در Production پیشنهاد نمی‌شود
+]
 
-# روت اصلی
-@app.get("/")
-async def root():
-    return {"message": "Metreyar API"}
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,  # یا ['*']
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# آپلود فایل
-@app.post("/upload/")
-async def upload_file(file: UploadFile = File(...)):
-    contents = await file.read()
-    file_path = f"uploads/{file.filename}"
-    with open(file_path, "wb") as f:
-        f.write(contents)
-    return {
-        "filename": file.filename,
-        "size": len(contents),
-        "message": "File uploaded successfully"
-    }
-
-# فرم HTML برای آپلود دستی فایل از مرورگر
-@app.get("/upload-form", response_class=HTMLResponse)
-async def upload_form():
-    return """
-    <html>
-        <head>
-            <title>Upload File - Metreyar API</title>
-        </head>
-        <body>
-            <h1>Upload File</h1>
-            <form action="/upload/" enctype="multipart/form-data" method="post">
-                <input name="file" type="file">
-                <input type="submit">
-            </form>
-        </body>
-    </html>
-    """
+@app.get("/hello")
+def read_hello():
+    return {"message": "Hello from FastAPI 🎉"}

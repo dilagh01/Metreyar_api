@@ -1,44 +1,36 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.responses import JSONResponse
 
 app = FastAPI()
 
-<<<<<<< HEAD
-# لیست دامنه‌هایی که اجازه دارند (برای همه: ['*'])
+# اگر از دامنه خاص استفاده می‌کنی اینجا جایگزین کن
 origins = [
-    "http://localhost:3000",
-    "https://dilagh01.github.io",
-    "https://homkar.ir",
-    "*"  # برای تست، ولی در Production پیشنهاد نمی‌شود
+    "http://localhost:8080",           # برای تست لوکال
+    "https://homkar.ir",               # دامنه GitHub Pages frontend
+    "https://www.homkar.ir",           # اگر www هم فعال است
+    "https://api.homkar.ir",           # بک‌اند دامنه اختصاصی (در صورت وجود)
 ]
 
+# فعال‌سازی CORS برای ارتباط بین فرانت و بک
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,  # یا ['*']
+    allow_origins=origins,  # یا ["*"] برای اجازه به همه دامنه‌ها
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-@app.get("/hello")
-def read_hello():
-    return {"message": "Hello from FastAPI 🎉"}
-=======
-# ✅ لیست دامنه‌های مجاز برای درخواست به API
-origins = [
-    "https://homkar.ir",                  # دامنه اصلی سایت شما
-    "https://dilagh01.github.io",         # GitHub Pages
-    "https://api.homkar.ir",              # اگر از ساب‌دامنه برای بک‌اند استفاده می‌کنید
-    "http://localhost:3000",              # در حالت لوکال فرانت‌اند
-    "http://127.0.0.1:8000",              # در حالت تست لوکال بک‌اند
-]
+# روت تستی برای اطمینان از درستی API
+@app.get("/")
+async def root():
+    return {"message": "Metreyar API is running 🎉"}
 
-# 🧩 فعال‌سازی CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,               # یا allow_origins=["*"] برای همه‌ی دامنه‌ها
-    allow_credentials=True,
-    allow_methods=["*"],                 # یا فقط ["GET", "POST"] و غیره
-    allow_headers=["*"],                 # یا فقط ["Content-Type"]
-)
->>>>>>> 797ad60 (feat: add CORS middleware to FastAPI backend)
+# روت نمونه برای دریافت لیست پروژه‌ها
+@app.get("/projects")
+async def get_projects():
+    sample_data = [
+        {"id": 1, "name": "پروژه متره کلاس فنی"},
+        {"id": 2, "name": "پروژه آزمایشی گلخانه"},
+    ]
+    return JSONResponse(content=sample_data)

@@ -4,27 +4,26 @@ from starlette.responses import JSONResponse
 
 app = FastAPI()
 
-# اگر از دامنه خاص استفاده می‌کنی اینجا جایگزین کن
+# آدرس‌های مجاز برای CORS
 origins = [
-    "http://localhost:8080",           # برای تست لوکال
-    "https://homkar.ir",               # دامنه GitHub Pages frontend
-    "https://www.homkar.ir",           # اگر www هم فعال است
-    "https://api.homkar.ir",           # بک‌اند دامنه اختصاصی (در صورت وجود)
+    "http://localhost:8080",  # تست محلی
+    "https://dilagh01.github.io",  # GitHub Pages اصلی
+    "https://dilagh01.github.io/Metreyar_flutter_web",  # مسیر پوشه پروژه در پیج
 ]
 
-# فعال‌سازی CORS برای ارتباط بین فرانت و بک
+# فعال‌سازی CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,  # یا ["*"] برای اجازه به همه دامنه‌ها
+    allow_origins=origins,  # برای تست کامل می‌تونی از ["*"] هم استفاده کنی
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# روت تستی برای اطمینان از درستی API
+# روت اصلی برای بررسی وضعیت سرور
 @app.get("/")
 async def root():
-    return {"message": "Metreyar API is running 🎉"}
+    return {"message": "🎉 Metreyar API is running on Render"}
 
 # روت نمونه برای دریافت لیست پروژه‌ها
 @app.get("/projects")

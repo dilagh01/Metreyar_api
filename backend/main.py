@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.responses import JSONResponse
+from fastapi.responses import JSONResponse
 
 app = FastAPI()
 
@@ -25,16 +25,7 @@ app.add_middleware(
 async def root():
     return {"message": "🎉 Metreyar API is running on Render"}
 
-# روت نمونه برای دریافت لیست پروژه‌ها
-@app.get("/projects")
-async def get_projects():
-    sample_data = [
-        {"id": 1, "name": "پروژه متره کلاس فنی"},
-        {"id": 2, "name": "پروژه آزمایشی گلخانه"},
-    ]
-    return JSONResponse(content=sample_data)
-from fastapi.responses import JSONResponse
-
+# روت صحیح و واحد برای دریافت پروژه‌ها با UTF-8
 @app.get("/projects")
 async def get_projects():
     sample_data = [

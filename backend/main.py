@@ -33,3 +33,15 @@ async def get_projects():
         {"id": 2, "name": "پروژه آزمایشی گلخانه"},
     ]
     return JSONResponse(content=sample_data)
+from fastapi.responses import JSONResponse
+
+@app.get("/projects")
+async def get_projects():
+    sample_data = [
+        {"id": 1, "name": "پروژه متره کلاس فنی"},
+        {"id": 2, "name": "پروژه آزمایشی گلخانه"},
+    ]
+    return JSONResponse(
+        content=sample_data,
+        media_type="application/json; charset=utf-8"
+    )

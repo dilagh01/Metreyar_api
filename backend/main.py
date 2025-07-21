@@ -32,7 +32,7 @@ def read_root():
     return {"message": "Welcome to Metreyar OCR API"}
 
 @app.post("/ocr/")
-async def perform_ocr(files: List[UploadFile] = File(...)):
+async def perform_ocr(file: List[UploadFile] = File(...)):
     extracted_texts = []
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)

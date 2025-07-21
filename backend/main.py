@@ -16,7 +16,7 @@ app = FastAPI()
 # فعال‌سازی CORS برای ارتباط با Flutter Web
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+allow_origins=["https://dilagh01.github.io"]
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

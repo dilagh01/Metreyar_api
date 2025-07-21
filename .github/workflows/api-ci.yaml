@@ -30,6 +30,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: 📁 Create required folders
+        working-directory: backend
+        run: |
+          mkdir -p uploaded_images results
+
       - name: ✅ Run FastAPI (syntax check)
         working-directory: backend
         run: |

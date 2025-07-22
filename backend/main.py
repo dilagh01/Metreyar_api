@@ -13,10 +13,10 @@ import uuid
 
 app = FastAPI()
 
-# فعال‌سازی CORS برای ارتباط با Flutter Web
+# فعال‌سازی CORS برای GitHub Pages
 app.add_middleware(
     CORSMiddleware,
-allow_origins=["https://dilagh01.github.io"],
+    allow_origins=["https://dilagh01.github.io"],  # یا ["*"] برای تست باز
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -32,7 +32,7 @@ def read_root():
     return {"message": "Welcome to Metreyar OCR API"}
 
 @app.post("/ocr/")
-async def perform_ocr(file: List[UploadFile] = File(...)):
+async def perform_ocr(files: List[UploadFile] = File(...)):
     extracted_texts = []
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -40,7 +40,6 @@ async def perform_ocr(file: List[UploadFile] = File(...)):
     ws = wb.active
     ws.title = "OCR Results"
     ws.append(["Filename", "Extracted Text"])  # Excel header
-
     saved_filenames = []
 
     for file in files:

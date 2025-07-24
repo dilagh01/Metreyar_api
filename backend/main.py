@@ -16,7 +16,7 @@ app = FastAPI()
 # فعال‌سازی CORS برای GitHub Pages
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://dilagh01.github.io/Metreyar_flutter_web/"],  # یا ["*"] برای تست باز
+    allow_origins=["*"]  # برای تست — در حالت نهایی حتما محدود کن
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -81,7 +81,7 @@ async def perform_ocr(files: List[UploadFile] = File(...)):
     excel_path = Path(RESULT_FOLDER) / "ocr_result.xlsx"
     wb.save(str(excel_path))
 
-return {
+    return {
         "message": "OCR completed",
         "uploaded_files": saved_filenames,
         "pdf_result": str(pdf_path),
@@ -89,6 +89,7 @@ return {
         "excel_result": str(excel_path),
         "text": extracted_texts
     }
+
 @app.get("/download/pdf")
 def download_pdf():
     path = Path(RESULT_FOLDER) / "ocr_result.pdf"

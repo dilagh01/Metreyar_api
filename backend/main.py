@@ -13,10 +13,10 @@ import uuid
 
 app = FastAPI()
 
-# 🛡️ فعال‌سازی کامل CORS برای اتصال به GitHub Pages یا همه دامنه‌ها (در صورت نیاز)
+# 🛡️ فعال‌سازی CORS (برای اتصال از GitHub Pages)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # برای امنیت بیشتر می‌تونی به ['https://dilagh01.github.io'] محدود کنی
+    allow_origins=["*"],  # 🔐 برای امنیت بهتر می‌تونی فقط ['https://dilagh01.github.io'] بذاری
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -54,20 +54,20 @@ async def perform_ocr(files: List[UploadFile] = File(...)):
         saved_filenames.append(str(filepath))
         img = Image.open(filepath)
 
-        # انجام OCR با زبان فارسی و انگلیسی
+        # انجام OCR
         text = pytesseract.image_to_string(img, lang="fas+eng")
         extracted_texts.append(text)
 
-        # اضافه کردن به PDF
+        # افزودن به PDF
         pdf.add_page()
         pdf.set_font("Arial", size=12)
         for line in text.splitlines():
             pdf.multi_cell(0, 10, line)
 
-        # اضافه کردن به Excel
+        # افزودن به Excel
         ws.append([filename, text])
 
-    # ذخیره فایل‌ها
+    # ذخیره نتایج
     pdf_path = Path(RESULT_FOLDER) / "ocr_result.pdf"
     pdf.output(str(pdf_path))
 
@@ -81,6 +81,7 @@ async def perform_ocr(files: List[UploadFile] = File(...)):
 
     return {
         "message": "✅ OCR completed",
+        "uploaded_files": saved_filenames,
         "text": extracted_texts
     }
 

@@ -13,10 +13,10 @@ import uuid
 
 app = FastAPI()
 
-# فعال‌سازی CORS برای GitHub Pages
+# 🛡️ فعال‌سازی کامل CORS برای اتصال به GitHub Pages یا همه دامنه‌ها (در صورت نیاز)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"]  # برای تست — در حالت نهایی حتما محدود کن
+    allow_origins=["*"],  # برای امنیت بیشتر می‌تونی به ['https://dilagh01.github.io'] محدود کنی
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -29,7 +29,7 @@ os.makedirs(RESULT_FOLDER, exist_ok=True)
 
 @app.get("/")
 def read_root():
-    return {"message": "Welcome to Metreyar OCR API"}
+    return {"message": "✅ Welcome to Metreyar OCR API"}
 
 @app.post("/ocr/")
 async def perform_ocr(files: List[UploadFile] = File(...)):
@@ -39,7 +39,7 @@ async def perform_ocr(files: List[UploadFile] = File(...)):
     wb = Workbook()
     ws = wb.active
     ws.title = "OCR Results"
-    ws.append(["Filename", "Extracted Text"])  # Excel header
+    ws.append(["Filename", "Extracted Text"])
     saved_filenames = []
 
     for file in files:
@@ -58,35 +58,29 @@ async def perform_ocr(files: List[UploadFile] = File(...)):
         text = pytesseract.image_to_string(img, lang="fas+eng")
         extracted_texts.append(text)
 
-        # افزودن به PDF
+        # اضافه کردن به PDF
         pdf.add_page()
         pdf.set_font("Arial", size=12)
         for line in text.splitlines():
             pdf.multi_cell(0, 10, line)
 
-        # افزودن به Excel
+        # اضافه کردن به Excel
         ws.append([filename, text])
 
-    # ذخیره PDF
+    # ذخیره فایل‌ها
     pdf_path = Path(RESULT_FOLDER) / "ocr_result.pdf"
     pdf.output(str(pdf_path))
 
-    # ذخیره TXT
     txt_path = Path(RESULT_FOLDER) / "ocr_result.txt"
     with open(txt_path, "w", encoding="utf-8") as f:
         for text in extracted_texts:
             f.write(text + "\n\n")
 
-    # ذخیره Excel
     excel_path = Path(RESULT_FOLDER) / "ocr_result.xlsx"
     wb.save(str(excel_path))
 
     return {
-        "message": "OCR completed",
-        "uploaded_files": saved_filenames,
-        "pdf_result": str(pdf_path),
-        "txt_result": str(txt_path),
-        "excel_result": str(excel_path),
+        "message": "✅ OCR completed",
         "text": extracted_texts
     }
 

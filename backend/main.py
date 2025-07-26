@@ -16,7 +16,7 @@ app = FastAPI()
 # فعال‌سازی CORS برای اجازه دسترسی از سمت فرانت
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # برای امنیت بیشتر بهتره فقط دامنه مجاز وارد بشه
+    allow_origins=["https://dilagh01.github.io", "https://dilagh01.github.io/metreyar_flutter_web"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

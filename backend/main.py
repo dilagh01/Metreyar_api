@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, UploadFile, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from typing import List
@@ -10,10 +10,12 @@ from fpdf import FPDF
 from openpyxl import Workbook
 import os
 import uuid
+from io import BytesIO
+import base64
 
 app = FastAPI()
 
-# فعال‌سازی CORS برای اجازه دسترسی از سمت فرانت
+# فعال‌سازی CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://dilagh01.github.io", "https://dilagh01.github.io/metreyar_flutter_web"],
@@ -22,86 +24,31 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-UPLOAD_FOLDER = "uploaded_images"
-RESULT_FOLDER = "results"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(RESULT_FOLDER, exist_ok=True)
-
-@app.get("/")
-def read_root():
-    return {"message": "✅ Welcome to Metreyar OCR API"}
-
+# مسیر OCR فایل (multipart)
 @app.post("/ocr/")
 async def perform_ocr(files: List[UploadFile] = File(...)):
-    extracted_texts = []
-    pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "OCR Results"
-    ws.append(["Filename", "Extracted Text"])
-    saved_filenames = []
+    # ... (کد مربوط به OCR فایل‌ها)
+    pass
 
-    for file in files:
-        unique_id = str(uuid.uuid4())
-        extension = Path(file.filename).suffix
-        filename = f"{unique_id}{extension}"
-        filepath = Path(UPLOAD_FOLDER) / filename
+# 🔹 مسیر OCR از base64 (مخصوص Flutter Web)
+@app.post("/ocr/base64")
+async def ocr_from_base64(request: Request):
+    data = await request.json()
+    image_data = data.get("image")
 
-        with open(filepath, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+    if not image_data:
+        return {"error": "No image data provided"}
 
-        saved_filenames.append(str(filepath))
-        img = Image.open(filepath)
+    try:
+        image_bytes = base64.b64decode(image_data)
+        image = Image.open(BytesIO(image_bytes))
+        text = pytesseract.image_to_string(image, lang="fas+eng")
+        return {"text": text}
+    except Exception as e:
+        return {"error": str(e)}
 
-        # انجام OCR
-        text = pytesseract.image_to_string(img, lang="fas+eng")
-        extracted_texts.append(text)
-
-        # افزودن به PDF
-        pdf.add_page()
-        pdf.set_font("Arial", size=12)
-        for line in text.splitlines():
-            pdf.multi_cell(0, 10, line)
-
-        # افزودن به اکسل
-        ws.append([filename, text])
-
-    # ذخیره فایل‌ها
-    pdf_path = Path(RESULT_FOLDER) / "ocr_result.pdf"
-    pdf.output(str(pdf_path))
-
-    txt_path = Path(RESULT_FOLDER) / "ocr_result.txt"
-    with open(txt_path, "w", encoding="utf-8") as f:
-        for text in extracted_texts:
-            f.write(text + "\n\n")
-
-    excel_path = Path(RESULT_FOLDER) / "ocr_result.xlsx"
-    wb.save(str(excel_path))
-
-    return {
-        "message": "✅ OCR completed",
-        "uploaded_files": saved_filenames,
-        "text": extracted_texts
-    }
-
+# مسیرهای دانلود (PDF, TXT, Excel)
 @app.get("/download/pdf")
 def download_pdf():
-    path = Path(RESULT_FOLDER) / "ocr_result.pdf"
-    if path.exists():
-        return FileResponse(path, media_type="application/pdf", filename="ocr_result.pdf")
-    return {"error": "PDF not found"}
-
-@app.get("/download/txt")
-def download_txt():
-    path = Path(RESULT_FOLDER) / "ocr_result.txt"
-    if path.exists():
-        return FileResponse(path, media_type="text/plain", filename="ocr_result.txt")
-    return {"error": "Text file not found"}
-
-@app.get("/download/excel")
-def download_excel():
-    path = Path(RESULT_FOLDER) / "ocr_result.xlsx"
-    if path.exists():
-        return FileResponse(path, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename="ocr_result.xlsx")
-    return {"error": "Excel file not found"}
+    # ...
+    pass

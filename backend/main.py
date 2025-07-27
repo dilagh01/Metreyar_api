@@ -15,29 +15,31 @@ import base64
 
 app = FastAPI()
 
-# فعال‌سازی CORS
+# 🛡️ فعال‌سازی CORS برای دسترسی از GitHub Pages یا سایر فرانت‌ها
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://dilagh01.github.io", "https://dilagh01.github.io/metreyar_flutter_web"],
+    allow_origins=[
+        "https://dilagh01.github.io",
+        "https://dilagh01.github.io/metreyar_flutter_web"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# مسیر OCR فایل (multipart)
-from fastapi import FastAPI, File, UploadFile
-from typing import List
-from pathlib import Path
-import shutil
-import pytesseract
-from PIL import Image
-from fpdf import FPDF
-from openpyxl import Workbook
-import os
-import uuid
+# 📁 پوشه‌های ذخیره‌سازی
+UPLOAD_FOLDER = "uploaded_images"
+RESULT_FOLDER = "results"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(RESULT_FOLDER, exist_ok=True)
 
-app = FastAPI()
 
+@app.get("/")
+def read_root():
+    return {"message": "✅ Welcome to Metreyar OCR API"}
+
+
+# 🔹 مسیر OCR از آپلود فایل‌های تصویری (multipart)
 @app.post("/ocr/")
 async def perform_ocr(files: List[UploadFile] = File(...)):
     extracted_texts = []
@@ -47,12 +49,6 @@ async def perform_ocr(files: List[UploadFile] = File(...)):
     ws = wb.active
     ws.title = "OCR Results"
     ws.append(["Filename", "Extracted Text"])
-
-    UPLOAD_FOLDER = "uploaded_images"
-    RESULT_FOLDER = "results"
-    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-    os.makedirs(RESULT_FOLDER, exist_ok=True)
-
     saved_filenames = []
 
     for file in files:
@@ -67,16 +63,20 @@ async def perform_ocr(files: List[UploadFile] = File(...)):
         saved_filenames.append(str(filepath))
         img = Image.open(filepath)
 
+        # 🔍 انجام OCR
         text = pytesseract.image_to_string(img, lang="fas+eng")
         extracted_texts.append(text)
 
+        # 📝 افزودن به PDF
         pdf.add_page()
         pdf.set_font("Arial", size=12)
         for line in text.splitlines():
             pdf.multi_cell(0, 10, line)
 
+        # 📊 افزودن به Excel
         ws.append([filename, text])
 
+    # 💾 ذخیره نتایج
     pdf_path = Path(RESULT_FOLDER) / "ocr_result.pdf"
     pdf.output(str(pdf_path))
 
@@ -94,19 +94,15 @@ async def perform_ocr(files: List[UploadFile] = File(...)):
         "text": extracted_texts
     }
 
-@app.post("/ocr/")
-async def perform_ocr(files: List[UploadFile] = File(...)):
-    # ... (کد مربوط به OCR فایل‌ها)
-    pass
 
-# 🔹 مسیر OCR از base64 (مخصوص Flutter Web)
+# 🔸 مسیر OCR از تصویر Base64 (برای Flutter Web)
 @app.post("/ocr/base64")
 async def ocr_from_base64(request: Request):
     data = await request.json()
     image_data = data.get("image")
 
     if not image_data:
-        return {"error": "No image data provided"}
+        return {"error": "❌ No image data provided"}
 
     try:
         image_bytes = base64.b64decode(image_data)
@@ -116,8 +112,33 @@ async def ocr_from_base64(request: Request):
     except Exception as e:
         return {"error": str(e)}
 
-# مسیرهای دانلود (PDF, TXT, Excel)
+
+# 📥 مسیر دانلود PDF
 @app.get("/download/pdf")
 def download_pdf():
-    # ...
-    pass
+    path = Path(RESULT_FOLDER) / "ocr_result.pdf"
+    if path.exists():
+        return FileResponse(path, media_type="application/pdf", filename="ocr_result.pdf")
+    return {"error": "PDF not found"}
+
+
+# 📥 مسیر دانلود فایل متنی
+@app.get("/download/txt")
+def download_txt():
+    path = Path(RESULT_FOLDER) / "ocr_result.txt"
+    if path.exists():
+        return FileResponse(path, media_type="text/plain", filename="ocr_result.txt")
+    return {"error": "Text file not found"}
+
+
+# 📥 مسیر دانلود فایل Excel
+@app.get("/download/excel")
+def download_excel():
+    path = Path(RESULT_FOLDER) / "ocr_result.xlsx"
+    if path.exists():
+        return FileResponse(
+            path,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            filename="ocr_result.xlsx"
+        )
+    return {"error": "Excel file not found"}

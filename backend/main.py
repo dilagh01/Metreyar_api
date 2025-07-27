@@ -40,8 +40,9 @@ def read_root():
 
 
 # 🔹 مسیر OCR از آپلود فایل‌های تصویری (multipart)
-@app.post("/ocr/")
-async def perform_ocr(files: List[UploadFile] = File(...)):
+@app.post("/ocr/base64")
+async def ocr_from_base64(request: Request):
+    ...
     extracted_texts = []
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)

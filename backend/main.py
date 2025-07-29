@@ -10,8 +10,8 @@ app = FastAPI()
 
 # ✅ فعال‌سازی CORS
 origins = [
-    "https://dilagh01.github.io",  # آدرس اصلی گیت‌هاب پیج
-    "https://dilagh01.github.io/metreyar_flutter_web",  # مسیر پروژه
+#    "https://dilagh01.github.io",  # آدرس اصلی گیت‌هاب پیج
+ �   "https://dilagh01.github.io/metreyar_flutter_web",  # مسیر پروژه
 ]
 
 app.add_middleware(

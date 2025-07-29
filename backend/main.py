@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import base64
@@ -8,30 +8,28 @@ import pytesseract
 
 app = FastAPI()
 
-# ✅ فعال‌سازی CORS
+# اضافه کردن همه ریشه‌هایی که بهشون اجازه می‌دی (تست با * هم ممکنه)
 origins = [
-    "https://dilagh01.github.io", 
+    "https://dilagh01.github.io",
     "https://dilagh01.github.io/Metreyar_flutter_web"
 ]
 
+# فعال‌سازی CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,            # یا ["*"] برای تست
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],              # GET, POST, OPTIONS, ...
+    allow_headers=["*"],              # Content-Type, Authorization, ...
 )
 
-# ✅ مدل ورودی
 class ImageBase64(BaseModel):
     image: str
 
-# ✅ روت اصلی
 @app.get("/")
 def read_root():
     return {"message": "FastAPI OCR is working."}
 
-# ✅ تشخیص متن از تصویر base64
 @app.post("/ocr/base64")
 def ocr_from_base64(data: ImageBase64):
     try:

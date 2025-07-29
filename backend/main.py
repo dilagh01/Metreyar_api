@@ -11,12 +11,12 @@ app = FastAPI()
 # ✅ فعال‌سازی CORS
 origins = [
     "https://dilagh01.github.io", 
-    "https://dilagh01.github.io/metreyar_flutter_web"
+    "https://dilagh01.github.io/Metreyar_flutter_web"
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -12,7 +12,7 @@ app = FastAPI()
 origins = [
     "https://dilagh01.github.io", 
     "https://dilagh01.github.io/metreyar_flutter_web"
-]]
+]
 
 app.add_middleware(
     CORSMiddleware,

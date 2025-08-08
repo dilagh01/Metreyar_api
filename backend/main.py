@@ -8,19 +8,18 @@ import pytesseract
 
 app = FastAPI()
 
-# اضافه کردن همه ریشه‌هایی که بهشون اجازه می‌دی (تست با * هم ممکنه)
 origins = [
     "https://dilagh01.github.io",
-    "https://dilagh01.github.io/Metreyar_flutter_web"
+    # اگر میخواهید همه ریشه‌ها اجازه داشته باشند برای تست:
+    # "*",
 ]
 
-# فعال‌سازی CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,            # یا ["*"] برای تست
+    allow_origins=origins if origins else ["*"],  # اگر origins خالی بود، همه را اجازه بده
     allow_credentials=True,
-    allow_methods=["*"],              # GET, POST, OPTIONS, ...
-    allow_headers=["*"],              # Content-Type, Authorization, ...
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 class ImageBase64(BaseModel):

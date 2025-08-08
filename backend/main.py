@@ -9,7 +9,7 @@ import pytesseract
 app = FastAPI()
 
 origins = [
-    "https://dilagh01.github.io",
+    "https://dilagh01.github.io/metreyar_flutter_web",
     # اگر میخواهید همه ریشه‌ها اجازه داشته باشند برای تست:
     # "*",
 ]

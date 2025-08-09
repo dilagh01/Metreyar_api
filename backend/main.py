@@ -8,15 +8,17 @@ import pytesseract
 
 app = FastAPI()
 
+# CORS تنظیمات
 origins = [
+    "https://dilagh01.github.io",
     "https://dilagh01.github.io/metreyar_flutter_web",
-    # برای تست می‌توانید "*" را قرار دهید
-    # "*",
+    "https://dilagh01.github.io/metreyar_flutter_web/",
+    "*"  # موقت برای تست
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins if origins else ["*"],  # اگر origins خالی بود، همه را اجازه بده
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

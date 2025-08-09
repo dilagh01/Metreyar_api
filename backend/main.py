@@ -8,12 +8,9 @@ import pytesseract
 
 app = FastAPI()
 
-# CORS تنظیمات
 origins = [
-    "https://dilagh01.github.io",
     "https://dilagh01.github.io/metreyar_flutter_web",
-    "https://dilagh01.github.io/metreyar_flutter_web/",
-    "*"  # موقت برای تست
+    "*",  # برای تست، بعداً محدود کن
 ]
 
 app.add_middleware(
@@ -34,9 +31,26 @@ def read_root():
 @app.post("/ocr/base64")
 def ocr_from_base64(data: ImageBase64):
     try:
-        image_data = base64.b64decode(data.image)
+        # حذف هدر base64 اگر وجود داشته باشد
+        img_str = data.image
+        if "," in img_str:
+            img_str = img_str.split(",")[1]
+
+        image_data = base64.b64decode(img_str)
+
+        # ذخیره‌ی فایل برای دیباگ
+        with open("debug_image.png", "wb") as f:
+            f.write(image_data)
+
         image = Image.open(io.BytesIO(image_data))
-        text = pytesseract.image_to_string(image, lang='eng+fas')
-        return {"text": text.strip()}
+
+        # اجرای OCR
+        text = pytesseract.image_to_string(image, lang='eng+fas').strip()
+
+        if not text:
+            return {"error": "هیچ متنی یافت نشد. تصویر ممکن است کیفیت پایینی داشته باشد یا زبان اشتباه باشد."}
+
+        return {"text": text}
+
     except Exception as e:
         return {"error": str(e)}

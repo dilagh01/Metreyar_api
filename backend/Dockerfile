@@ -11,16 +11,15 @@ RUN apt-get update && apt-get install -y \
 # دایرکتوری کاری داخل کانتینر
 WORKDIR /app
 
-# کپی کردن فایل‌های پروژه به داخل کانتینر
-COPY ./backend /app/backend
-COPY requirements.txt /app/
+# کپی کردن فایل‌های پروژه به داخل کانتینر (از پوشه backend)
+COPY ./backend /app
 
 # نصب پکیج‌های پایتون
 RUN pip install --no-cache-dir --upgrade pip
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
 
 # پورت اپلیکیشن
 EXPOSE 8000
 
 # دستور اجرای اپ
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -9,7 +9,7 @@ import pytesseract
 app = FastAPI()
 
 origins = [
-    "https://dilagh01.github.io/metreyar_flutter_web",
+    "https://dilagh01.github.io",
 ]
 
 app.add_middleware(

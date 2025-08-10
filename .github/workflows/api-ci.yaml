@@ -11,32 +11,19 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: ⬇️ Clone repository
+      - name: ⬇️ Checkout repository
         uses: actions/checkout@v3
 
-      - name: 🔠 Install Tesseract OCR
+      - name: 🔧 Build Docker image
         run: |
-          sudo apt update
-          sudo apt install -y tesseract-ocr tesseract-ocr-fas
+          docker build -t metreyar_api ./backend
 
-      - name: 🐍 Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-
-      - name: 📦 Install dependencies
-        working-directory: backend
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: ✅ Run FastAPI (syntax check)
+      - name: ✅ Python syntax check
         working-directory: backend
         run: |
           python -m py_compile main.py
 
       - name: 🚨 Lint with flake8 (optional)
-        if: always()
         working-directory: backend
         run: |
           pip install flake8

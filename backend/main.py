@@ -5,6 +5,7 @@ import base64
 from PIL import Image
 import io
 import pytesseract
+from pytesseract import Output
 
 app = FastAPI()
 
@@ -23,33 +24,39 @@ app.add_middleware(
 class ImageBase64(BaseModel):
     image: str
 
-@app.get("/")
-def read_root():
-    return {"message": "FastAPI OCR is working."}
-
 @app.post("/ocr/base64")
 def ocr_from_base64(data: ImageBase64):
     try:
-        # حذف هدر base64 اگر وجود داشته باشد
         img_str = data.image
         if "," in img_str:
             img_str = img_str.split(",")[1]
 
         image_data = base64.b64decode(img_str)
-
-        # ذخیره‌ی فایل برای دیباگ
-        with open("debug_image.png", "wb") as f:
-            f.write(image_data)
-
         image = Image.open(io.BytesIO(image_data))
 
-        # اجرای OCR
-        text = pytesseract.image_to_string(image, lang='eng+fas').strip()
+        # گرفتن داده‌های موقعیت و متن
+        ocr_data = pytesseract.image_to_data(image, lang='eng+fas', output_type=Output.DICT)
 
-        if not text:
-            return {"error": "هیچ متنی یافت نشد. تصویر ممکن است کیفیت پایینی داشته باشد یا زبان اشتباه باشد."}
+        results = []
+        n_boxes = len(ocr_data['text'])
+        for i in range(n_boxes):
+            text = ocr_data['text'][i].strip()
+            conf = int(ocr_data['conf'][i])
+            if text and conf > 40:  # فیلتر کردن متن‌های ضعیف
+                left = ocr_data['left'][i]
+                top = ocr_data['top'][i]
+                width = ocr_data['width'][i]
+                height = ocr_data['height'][i]
+                results.append({
+                    "text": text,
+                    "conf": conf,
+                    "left": left,
+                    "top": top,
+                    "width": width,
+                    "height": height,
+                })
 
-        return {"text": text}
+        return {"results": results}
 
     except Exception as e:
         return {"error": str(e)}

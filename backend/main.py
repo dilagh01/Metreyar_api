@@ -10,7 +10,6 @@ app = FastAPI()
 
 origins = [
     "https://dilagh01.github.io/metreyar_flutter_web",
-    "*",  # برای تست، بعداً محدود کن
 ]
 
 app.add_middleware(

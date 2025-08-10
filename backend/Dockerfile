@@ -12,8 +12,8 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # کپی کردن فقط فایل requirements.txt اول برای بهره‌وری بهتر کش کردن لایه‌ها
-COPY backend/requirements.txt /app/requirements.txt
-
+COPY requirements.txt /app/requirements.txt
+COPY . /app
 # نصب پکیج‌های پایتون
 RUN pip install --no-cache-dir --upgrade pip
 RUN pip install --no-cache-dir -r /app/requirements.txt

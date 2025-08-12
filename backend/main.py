@@ -1,4 +1,3 @@
-# main.py
 from fastapi import FastAPI, UploadFile, File
 import uvicorn
 from paddleocr import PaddleOCR
@@ -7,13 +6,12 @@ from PIL import Image
 import io
 
 app = FastAPI()
-ocr = PaddleOCR(use_angle_cls=True, lang='en')  # زبان قابل تغییر به fa
+ocr = PaddleOCR(use_textline_orientation=True, lang='en')  # اصلاح پارامتر
 
 @app.post("/ocr")
 async def ocr_file(file: UploadFile = File(...)):
     contents = await file.read()
 
-    # تشخیص فرمت
     if file.filename.lower().endswith(".pdf"):
         images = convert_from_bytes(contents)
     else:
@@ -25,7 +23,6 @@ async def ocr_file(file: UploadFile = File(...)):
         img.save(img_byte_arr, format='PNG')
         img_bytes = img_byte_arr.getvalue()
 
-        # OCR
         result = ocr.ocr(img_bytes, cls=True)
         page_results = []
         for line in result[0]:
@@ -40,4 +37,4 @@ async def ocr_file(file: UploadFile = File(...)):
     return {"pages": results_all}
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=10000)
+    uvicorn.run(app, host="0.0.0.0", port=8080)  # پورت 8080 برای Render پیشنهاد می‌شود

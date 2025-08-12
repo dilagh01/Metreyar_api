@@ -1,53 +1,43 @@
-import cv2
-import pytesseract
-from pytesseract import Output
-from pdf2image import convert_from_path
-import numpy as np
+# main.py
+from fastapi import FastAPI, UploadFile, File
+import uvicorn
+from paddleocr import PaddleOCR
+from pdf2image import convert_from_bytes
+from PIL import Image
+import io
 
-class OCRPage:
-    def __init__(self, lang="eng+fas"):
-        self.lang = lang
+app = FastAPI()
+ocr = PaddleOCR(use_angle_cls=True, lang='en')  # زبان قابل تغییر به fa
 
-    def load_image(self, file_path):
-        if file_path.lower().endswith(".pdf"):
-            # تبدیل PDF به تصویر
-            pages = convert_from_path(file_path, dpi=200)
-            return [cv2.cvtColor(np.array(p), cv2.COLOR_RGB2BGR) for p in pages]
-        else:
-            img = cv2.imread(file_path)
-            return [img]
+@app.post("/ocr")
+async def ocr_file(file: UploadFile = File(...)):
+    contents = await file.read()
 
-    def process_image(self, image):
-        # کاهش اندازه برای سرعت
-        scale_factor = 1000 / max(image.shape[:2])
-        small_img = cv2.resize(image, None, fx=scale_factor, fy=scale_factor)
+    # تشخیص فرمت
+    if file.filename.lower().endswith(".pdf"):
+        images = convert_from_bytes(contents)
+    else:
+        images = [Image.open(io.BytesIO(contents))]
 
-        # OCR و گرفتن مکان متن‌ها
-        data = pytesseract.image_to_data(small_img, lang=self.lang, output_type=Output.DICT)
+    results_all = []
+    for img in images:
+        img_byte_arr = io.BytesIO()
+        img.save(img_byte_arr, format='PNG')
+        img_bytes = img_byte_arr.getvalue()
 
-        for i in range(len(data["text"])):
-            if int(data["conf"][i]) > 50:  # اطمینان از کیفیت
-                x, y, w, h = data["left"][i], data["top"][i], data["width"][i], data["height"][i]
-                # تطبیق مختصات با سایز اصلی
-                x = int(x / scale_factor)
-                y = int(y / scale_factor)
-                w = int(w / scale_factor)
-                h = int(h / scale_factor)
-                cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        # OCR
+        result = ocr.ocr(img_bytes, cls=True)
+        page_results = []
+        for line in result[0]:
+            bbox, (text, prob) = line
+            page_results.append({
+                "bbox": bbox,
+                "text": text,
+                "confidence": float(prob)
+            })
+        results_all.append(page_results)
 
-        return image
+    return {"pages": results_all}
 
-    def run(self, file_path):
-        pages = self.load_image(file_path)
-        results = []
-        for page in pages:
-            processed = self.process_image(page)
-            results.append(processed)
-        return results
-
-# استفاده:
-ocr = OCRPage(lang="fas+eng")
-images = ocr.run("file.pdf")  # یا "image.jpg"
-
-for idx, img in enumerate(images):
-    cv2.imwrite(f"output_page_{idx+1}.jpg", img)
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=10000)

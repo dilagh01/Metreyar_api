@@ -1,62 +1,53 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-import base64
-from PIL import Image
-import io
+import cv2
 import pytesseract
 from pytesseract import Output
+from pdf2image import convert_from_path
+import numpy as np
 
-app = FastAPI()
+class OCRPage:
+    def __init__(self, lang="eng+fas"):
+        self.lang = lang
 
-origins = [
-    "https://dilagh01.github.io",
-]
+    def load_image(self, file_path):
+        if file_path.lower().endswith(".pdf"):
+            # تبدیل PDF به تصویر
+            pages = convert_from_path(file_path, dpi=200)
+            return [cv2.cvtColor(np.array(p), cv2.COLOR_RGB2BGR) for p in pages]
+        else:
+            img = cv2.imread(file_path)
+            return [img]
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    def process_image(self, image):
+        # کاهش اندازه برای سرعت
+        scale_factor = 1000 / max(image.shape[:2])
+        small_img = cv2.resize(image, None, fx=scale_factor, fy=scale_factor)
 
-class ImageBase64(BaseModel):
-    image: str
+        # OCR و گرفتن مکان متن‌ها
+        data = pytesseract.image_to_data(small_img, lang=self.lang, output_type=Output.DICT)
 
-@app.post("/ocr/base64")
-def ocr_from_base64(data: ImageBase64):
-    try:
-        img_str = data.image
-        if "," in img_str:
-            img_str = img_str.split(",")[1]
+        for i in range(len(data["text"])):
+            if int(data["conf"][i]) > 50:  # اطمینان از کیفیت
+                x, y, w, h = data["left"][i], data["top"][i], data["width"][i], data["height"][i]
+                # تطبیق مختصات با سایز اصلی
+                x = int(x / scale_factor)
+                y = int(y / scale_factor)
+                w = int(w / scale_factor)
+                h = int(h / scale_factor)
+                cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
-        image_data = base64.b64decode(img_str)
-        image = Image.open(io.BytesIO(image_data))
+        return image
 
-        # گرفتن داده‌های موقعیت و متن
-        ocr_data = pytesseract.image_to_data(image, lang='eng+fas', output_type=Output.DICT)
-
+    def run(self, file_path):
+        pages = self.load_image(file_path)
         results = []
-        n_boxes = len(ocr_data['text'])
-        for i in range(n_boxes):
-            text = ocr_data['text'][i].strip()
-            conf = int(ocr_data['conf'][i])
-            if text and conf > 40:  # فیلتر کردن متن‌های ضعیف
-                left = ocr_data['left'][i]
-                top = ocr_data['top'][i]
-                width = ocr_data['width'][i]
-                height = ocr_data['height'][i]
-                results.append({
-                    "text": text,
-                    "conf": conf,
-                    "left": left,
-                    "top": top,
-                    "width": width,
-                    "height": height,
-                })
+        for page in pages:
+            processed = self.process_image(page)
+            results.append(processed)
+        return results
 
-        return {"results": results}
+# استفاده:
+ocr = OCRPage(lang="fas+eng")
+images = ocr.run("file.pdf")  # یا "image.jpg"
 
-    except Exception as e:
-        return {"error": str(e)}
+for idx, img in enumerate(images):
+    cv2.imwrite(f"output_page_{idx+1}.jpg", img)

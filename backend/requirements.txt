@@ -7,3 +7,7 @@ numpy
 pandas
 tabula-py
 PyMuPDF
+fastapi
+uvicorn
+paddleocr
+o

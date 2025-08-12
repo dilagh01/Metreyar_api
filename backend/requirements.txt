@@ -9,5 +9,5 @@ tabula-py
 PyMuPDF
 fastapi
 uvicorn
+paddlepaddle
 paddleocr
-o

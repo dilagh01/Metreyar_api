@@ -1,30 +1,301 @@
-name: Metreyar API CI
+name: Setup Project Structure
 
 on:
+  workflow_dispatch:
   push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+    branches: [ main ]
+    paths:
+      - '.github/workflows/setup-structure.yml'
+      - 'requirements.txt'
 
 jobs:
-  build-and-test:
+  setup-structure:
     runs-on: ubuntu-latest
-
+    
     steps:
-      - name: ⬇️ Checkout repository
-        uses: actions/checkout@v3
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: Create project structure
+      run: |
+        # ایجاد ساختار دایرکتوری
+        mkdir -p backend/app/{api/endpoints,models,services,utils,core}
+        mkdir -p backend/tests
+        mkdir -p data
+        
+        # ایجاد فایل‌های اصلی
+        touch backend/app/__init__.py
+        touch backend/app/api/__init__.py
+        touch backend/app/api/endpoints/__init__.py
+        touch backend/app/models/__init__.py
+        touch backend/app/services/__init__.py
+        touch backend/app/utils/__init__.py
+        touch backend/app/core/__init__.py
+        touch backend/tests/__init__.py
+        
+        # ایجاد فایل‌های اصلی پایتون
+        echo "Creating main.py..."
+        cat > backend/app/main.py << 'EOL'
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from app.api.endpoints import materials, estimations, items, categories, units, auth
+from app.utils.database import engine, Base
 
-      - name: 🔧 Build Docker image
-        run: |
-          docker build -t metreyar_api ./backend
+# Create database tables
+Base.metadata.create_all(bind=engine)
 
-      - name: ✅ Python syntax check
-        working-directory: backend
-        run: |
-          python -m py_compile main.py
+app = FastAPI(
+    title="Metreyar API",
+    description="API for construction estimation system",
+    version="1.0.0"
+)
 
-      - name: 🚨 Lint with flake8 (optional)
-        working-directory: backend
-        run: |
-          pip install flake8
-          flake8 main.py || true
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Include routers
+app.include_router(materials.router, prefix="/api/materials", tags=["materials"])
+app.include_router(estimations.router, prefix="/api/estimations", tags=["estimations"])
+app.include_router(items.router, prefix="/api/items", tags=["items"])
+app.include_router(categories.router, prefix="/api/categories", tags=["categories"])
+app.include_router(units.router, prefix="/api/units", tags=["units"])
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+
+@app.get("/")
+async def root():
+    return {"message": "Metreyar API is running"}
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
+EOL
+
+        # ایجاد فایل database model
+        echo "Creating database.py..."
+        cat > backend/app/models/database.py << 'EOL'
+from sqlalchemy import create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+import os
+
+# SQLite database for development
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./metreyar.db")
+
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL, 
+    connect_args={"check_same_thread": False} if SQLALCHEMY_DATABASE_URL.startswith("sqlite") else {}
+)
+
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+Base = declarative_base()
+
+# Dependency to get DB session
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+EOL
+
+        # ایجاد فایل‌های endpoint
+        echo "Creating materials endpoint..."
+        cat > backend/app/api/endpoints/materials.py << 'EOL'
+from fastapi import APIRouter, HTTPException, Depends
+from typing import List
+from sqlalchemy.orm import Session
+from app.models.database import get_db
+from app.models.material import Material
+from app.schemas.material import MaterialCreate, MaterialResponse
+
+router = APIRouter()
+
+@router.get("/", response_model=List[MaterialResponse])
+async def get_materials(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    return db.query(Material).offset(skip).limit(limit).all()
+
+@router.get("/search", response_model=List[MaterialResponse])
+async def search_materials(query: str, db: Session = Depends(get_db)):
+    materials = db.query(Material).filter(Material.name.ilike(f"%{query}%")).all()
+    if not materials:
+        raise HTTPException(status_code=404, detail="Materials not found")
+    return materials
+
+@router.get("/{material_id}", response_model=MaterialResponse)
+async def get_material(material_id: int, db: Session = Depends(get_db)):
+    material = db.query(Material).filter(Material.id == material_id).first()
+    if not material:
+        raise HTTPException(status_code=404, detail="Material not found")
+    return material
+
+@router.post("/", response_model=MaterialResponse)
+async def create_material(material: MaterialCreate, db: Session = Depends(get_db)):
+    db_material = Material(**material.dict())
+    db.add(db_material)
+    db.commit()
+    db.refresh(db_material)
+    return db_material
+EOL
+
+        # ایجاد فایل requirements توسعه‌یافته
+        echo "Creating requirements.txt..."
+        cat > requirements.txt << 'EOL'
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+sqlalchemy==2.0.23
+pydantic==2.5.0
+python-multipart==0.0.6
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+alembic==1.12.1
+pytest==7.4.3
+pytest-asyncio==0.21.1
+requests==2.31.0
+python-dotenv==1.0.0
+EOL
+
+        # ایجاد فایل Dockerfile
+        echo "Creating Dockerfile..."
+        cat > Dockerfile << 'EOL'
+FROM python:3.9-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+EXPOSE 8000
+
+CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+EOL
+
+        # ایجاد docker-compose.yml
+        echo "Creating docker-compose.yml..."
+        cat > docker-compose.yml << 'EOL'
+version: '3.8'
+
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    environment:
+      - DATABASE_URL=sqlite:///./metreyar.db
+    command: uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
+
+  # برای استفاده از PostgreSQL:
+  # db:
+  #   image: postgres:13
+  #   environment:
+  #     POSTGRES_DB: metreyar
+  #     POSTGRES_USER: metreyar
+  #     POSTGRES_PASSWORD: metreyar
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data/
+EOL
+
+        # ایجاد فایل‌های داده پیش‌فرض
+        echo "Creating default data files..."
+        cat > data/default_materials.json << 'EOL'
+[
+  {
+    "name": "سیمان پرتلند",
+    "description": "سیمان پرتلند تیپ 1",
+    "unit": "کیلوگرم",
+    "unit_price": 12000,
+    "category": "نازک کاری"
+  },
+  {
+    "name": "آجر فشاری",
+    "description": "آجر فشاری استاندارد",
+    "unit": "عدد",
+    "unit_price": 2500,
+    "category": "اسکلت"
+  },
+  {
+    "name": "تیرآهن 14",
+    "description": "تیرآهن 14 سانتیمتری",
+    "unit": "متر",
+    "unit_price": 85000,
+    "category": "اسکلت"
+  }
+]
+EOL
+
+        cat > data/default_units.json << 'EOL'
+["عدد", "متر", "متر مربع", "متر مکعب", "کیلوگرم", "تن", "دستگاه", "نفر-روز"]
+EOL
+
+        cat > data/default_categories.json << 'EOL'
+["عمومی", "اسکلت", "نازک کاری", "تاسیسات", "برق", "مکانیک", "نما", "محوطه سازی"]
+EOL
+
+        # ایجاد فایل محیطی نمونه
+        echo "Creating .env.example..."
+        cat > .env.example << 'EOL'
+DATABASE_URL=sqlite:///./metreyar.db
+# برای PostgreSQL:
+# DATABASE_URL=postgresql://username:password@localhost:5432/metreyar
+
+SECRET_KEY=your-secret-key-here
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+EOL
+
+        # ایجاد اسکریپت راه‌اندازی
+        echo "Creating setup script..."
+        cat > setup_project.sh << 'EOL'
+#!/bin/bash
+
+echo "Setting up Metreyar API project..."
+
+# ایجاد محیط مجازی
+python -m venv venv
+source venv/bin/activate  # روی Windows: venv\Scripts\activate
+
+# نصب requirements
+pip install -r requirements.txt
+
+# کپی فایل محیطی
+if [ ! -f .env ]; then
+    cp .env.example .env
+    echo "Please edit .env file with your configuration"
+fi
+
+echo "Setup completed! You can now run:"
+echo "uvicorn backend.app.main:app --reload"
+EOL
+
+        chmod +x setup_project.sh
+
+        echo "Project structure created successfully!"
+        
+    - name: Verify structure
+      run: |
+        echo "Verifying project structure..."
+        find . -type f -name "*.py" | grep -v "__pycache__" | sort
+        echo "Structure verification completed!"
+        
+    - name: Commit changes
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add .
+        git diff --staged --quiet || git commit -m "Auto-setup: Create project structure"
+        git push

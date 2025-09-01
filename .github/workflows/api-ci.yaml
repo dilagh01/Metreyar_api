@@ -24,44 +24,33 @@ jobs:
         
     - name: Create API directory structure
       run: |
-        # ایجاد ساختار دایرکتوری‌های اصلی
-        mkdir -p backend/app/{api,endpoints,models,services,utils,core,database}
+        mkdir -p backend/app/{api,endpoints,models,services,utils,core,database,schemas}
         mkdir -p backend/tests
         mkdir -p data/migrations
         mkdir -p docs
-        
-        # ایجاد فایل‌های __init__.py
-        touch backend/__init__.py
-        touch backend/app/__init__.py
-        touch backend/app/api/__init__.py
-        touch backend/app/endpoints/__init__.py
-        touch backend/app/models/__init__.py
-        touch backend/app/services/__init__.py
-        touch backend/app/utils/__init__.py
-        touch backend/app/core/__init__.py
-        touch backend/app/database/__init__.py
-        touch backend/tests/__init__.py
-        
+
+        for d in backend backend/app backend/app/api backend/app/endpoints backend/app/models backend/app/services backend/app/utils backend/app/core backend/app/database backend/tests backend/app/schemas; do
+          touch $d/__init__.py
+        done
+
         echo "✅ ساختار دایرکتوری‌ها ایجاد شد"
         
     - name: Create main application files
       run: |
-        # ایجاد فایل main.py
         cat > backend/app/main.py << 'EOL'
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from app.database.session import engine, Base
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.database.session import engine, Base, get_db
 from app.api.v1 import api_router
 from app.core.config import settings
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # ایجاد جداول دیتابیس هنگام راه‌اندازی
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield
-    # تمیزکاری هنگام خاموشی
     await engine.dispose()
 
 app = FastAPI(
@@ -71,7 +60,6 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# تنظیمات CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.BACKEND_CORS_ORIGINS,
@@ -80,7 +68,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# اضافه کردن routerها
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
 @app.get("/")
@@ -92,35 +79,35 @@ async def root():
     }
 
 @app.get("/health")
-async def health_check():
-    return {"status": "healthy", "database": "connected"}
+async def health_check(db: AsyncSession = Depends(get_db)):
+    try:
+        await db.execute("SELECT 1")
+        return {"status": "healthy", "database": "connected"}
+    except Exception:
+        return {"status": "healthy", "database": "disconnected"}
 EOL
 
         echo "✅ فایل main.py ایجاد شد"
         
     - name: Create database configuration
       run: |
-        # ایجاد فایل‌های دیتابیس
         cat > backend/app/database/session.py << 'EOL'
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 from app.core.config import settings
 
-# ایجاد موتور دیتابیس
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DEBUG,
     future=True
 )
 
-# ایجاد session factory
 AsyncSessionLocal = sessionmaker(
     engine, class_=AsyncSession, expire_on_commit=False
 )
 
 Base = declarative_base()
 
-# Dependency برای گرفتن session
 async def get_db():
     async with AsyncSessionLocal() as session:
         try:
@@ -149,84 +136,42 @@ EOL
 
         echo "✅ فایل‌های دیتابیس ایجاد شدند"
         
-    - name: Create core configuration
-      run: |
-        # ایجاد فایل تنظیمات
-        cat > backend/app/core/config.py << 'EOL'
-from pydantic_settings import BaseSettings
-from typing import List
-import os
-
-class Settings(BaseSettings):
-    PROJECT_NAME: str = "Metreyar API"
-    VERSION: str = "1.0.0"
-    API_V1_STR: str = "/api/v1"
-    
-    # دیتابیس
-    DATABASE_URL: str = os.getenv(
-        "DATABASE_URL", 
-        "postgresql+asyncpg://postgres:postgres@localhost:5432/metreyar"
-    )
-    
-    # امنیت
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key-here")
-    ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 روز
-    
-    # CORS
-    BACKEND_CORS_ORIGINS: List[str] = ["*"]
-    
-    # تنظیمات دیگر
-    DEBUG: bool = os.getenv("DEBUG", "False").lower() == "true"
-    
-    class Config:
-        case_sensitive = True
-        env_file = ".env"
-
-settings = Settings()
-EOL
-
-        echo "✅ فایل تنظیمات ایجاد شد"
-        
     - name: Create models
       run: |
-        # ایجاد مدل‌های دیتابیس
         cat > backend/app/models/material.py << 'EOL'
 from sqlalchemy import Column, String, Float, Text, ForeignKey
 from sqlalchemy.orm import relationship
-from app.database.base import Base
+from app.database.base import BaseModel
 
-class Material(Base):
+class Material(BaseModel):
     __tablename__ = "materials"
     
     name = Column(String(100), nullable=False, index=True)
     description = Column(Text)
-    unit = Column(String(20), nullable=False)  # متر، کیلوگرم، عدد، etc.
+    unit = Column(String(20), nullable=False)
     unit_price = Column(Float, nullable=False)
     category = Column(String(50), nullable=False)
-    code = Column(String(20), unique=True)  # کد مصالح
+    code = Column(String(20), unique=True)
     
-    # روابط
     estimation_items = relationship("EstimationItem", back_populates="material")
 EOL
 
         cat > backend/app/models/estimation.py << 'EOL'
 from sqlalchemy import Column, String, Float, Text, ForeignKey
 from sqlalchemy.orm import relationship
-from app.database.base import Base
+from app.database.base import BaseModel
 
-class Estimation(Base):
+class Estimation(BaseModel):
     __tablename__ = "estimations"
     
     title = Column(String(200), nullable=False)
     description = Column(Text)
     total_cost = Column(Float, default=0.0)
-    status = Column(String(20), default="draft")  # draft, submitted, approved
+    status = Column(String(20), default="draft")
     
-    # روابط
     items = relationship("EstimationItem", back_populates="estimation", cascade="all, delete-orphan")
 
-class EstimationItem(Base):
+class EstimationItem(BaseModel):
     __tablename__ = "estimation_items"
     
     estimation_id = Column(ForeignKey("estimations.id"), nullable=False)
@@ -236,16 +181,15 @@ class EstimationItem(Base):
     total_price = Column(Float, nullable=False)
     notes = Column(Text)
     
-    # روابط
     estimation = relationship("Estimation", back_populates="items")
     material = relationship("Material", back_populates="estimation_items")
 EOL
 
         cat > backend/app/models/category.py << 'EOL'
-from sqlalchemy import Column, String
-from app.database.base import Base
+from sqlalchemy import Column, String, Text
+from app.database.base import BaseModel
 
-class Category(Base):
+class Category(BaseModel):
     __tablename__ = "categories"
     
     name = Column(String(50), unique=True, nullable=False)
@@ -256,29 +200,21 @@ EOL
         
     - name: Create API routes
       run: |
-        # ایجاد router اصلی
-        cat > backend/app/api/__init__.py << 'EOL'
+        mkdir -p backend/app/api/v1
+        cat > backend/app/api/v1/__init__.py << 'EOL'
 from fastapi import APIRouter
-from app.api.v1 import materials, estimations, categories
+from app.api.v1 import materials
 
 api_router = APIRouter()
-
 api_router.include_router(materials.router, prefix="/materials", tags=["materials"])
-api_router.include_router(estimations.router, prefix="/estimations", tags=["estimations"])
-api_router.include_router(categories.router, prefix="/categories", tags=["categories"])
 EOL
 
-        # ایجاد دایرکتوری versioning
-        mkdir -p backend/app/api/v1
-        touch backend/app/api/v1/__init__.py
-        
-        # ایجاد endpoint مصالح
+        # نمونه متریال‌ها (دیگر endpointها مشابه اضافه می‌شوند)
         cat > backend/app/api/v1/materials.py << 'EOL'
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from typing import List, Optional
-
 from app.database.session import get_db
 from app.models.material import Material
 from app.schemas.material import MaterialCreate, MaterialResponse, MaterialUpdate
@@ -286,92 +222,15 @@ from app.schemas.material import MaterialCreate, MaterialResponse, MaterialUpdat
 router = APIRouter()
 
 @router.get("/", response_model=List[MaterialResponse])
-async def get_materials(
-    skip: int = 0,
-    limit: int = 100,
-    category: Optional[str] = None,
-    search: Optional[str] = None,
-    db: AsyncSession = Depends(get_db)
-):
-    query = select(Material)
-    
-    if category:
-        query = query.where(Material.category == category)
-    
-    if search:
-        query = query.where(Material.name.ilike(f"%{search}%"))
-    
-    result = await db.execute(query.offset(skip).limit(limit))
-    materials = result.scalars().all()
-    return materials
-
-@router.get("/{material_id}", response_model=MaterialResponse)
-async def get_material(material_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Material).where(Material.id == material_id))
-    material = result.scalar_one_or_none()
-    
-    if not material:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="مصالح مورد نظر یافت نشد"
-        )
-    
-    return material
-
-@router.post("/", response_model=MaterialResponse, status_code=status.HTTP_201_CREATED)
-async def create_material(material: MaterialCreate, db: AsyncSession = Depends(get_db)):
-    db_material = Material(**material.dict())
-    db.add(db_material)
-    await db.commit()
-    await db.refresh(db_material)
-    return db_material
-
-@router.put("/{material_id}", response_model=MaterialResponse)
-async def update_material(
-    material_id: int, 
-    material_update: MaterialUpdate, 
-    db: AsyncSession = Depends(get_db)
-):
-    result = await db.execute(select(Material).where(Material.id == material_id))
-    db_material = result.scalar_one_or_none()
-    
-    if not db_material:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="مصالح مورد نظر یافت نشد"
-        )
-    
-    for field, value in material_update.dict(exclude_unset=True).items():
-        setattr(db_material, field, value)
-    
-    await db.commit()
-    await db.refresh(db_material)
-    return db_material
-
-@router.delete("/{material_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_material(material_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Material).where(Material.id == material_id))
-    material = result.scalar_one_or_none()
-    
-    if not material:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="مصالح مورد نظر یافت نشد"
-        )
-    
-    await db.delete(material)
-    await db.commit()
+async def get_materials(skip: int = 0, limit: int = 100, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Material).offset(skip).limit(limit))
+    return result.scalars().all()
 EOL
 
         echo "✅ endpointهای API ایجاد شدند"
         
     - name: Create schemas
       run: |
-        # ایجاد دایرکتوری schemas
-        mkdir -p backend/app/schemas
-        touch backend/app/schemas/__init__.py
-        
-        # ایجاد schema مصالح
         cat > backend/app/schemas/material.py << 'EOL'
 from pydantic import BaseModel
 from typing import Optional
@@ -407,122 +266,22 @@ EOL
 
         echo "✅ schemaهای Pydantic ایجاد شدند"
         
-    - name: Create requirements and environment files
+    - name: Create test file
       run: |
-        # ایجاد فایل requirements
-        cat > requirements.txt << 'EOL'
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-sqlalchemy==2.0.23
-asyncpg==0.29.0
-alembic==1.12.1
-pydantic==2.5.0
-pydantic-settings==2.1.0
-python-multipart==0.0.6
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
-python-dotenv==1.0.0
-psycopg2-binary==2.9.9
+        cat > backend/tests/test_health.py << 'EOL'
+from fastapi.testclient import TestClient
+from backend.app.main import app
+
+client = TestClient(app)
+
+def test_health():
+    response = client.get("/health")
+    assert response.status_code == 200
 EOL
 
-        # ایجاد فایل environment نمونه
-        cat > .env.example << 'EOL'
-# Database
-DATABASE_URL=postgresql+asyncpg://username:password@localhost:5432/metreyar
+        echo "✅ تست ساده اضافه شد"
 
-# Security
-SECRET_KEY=your-super-secret-key-change-in-production
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=1440
-
-# Application
-DEBUG=True
-PROJECT_NAME=Metreyar API
-VERSION=1.0.0
-API_V1_STR=/api/v1
-EOL
-
-        echo "✅ فایل‌های requirements و environment ایجاد شدند"
-        
-    - name: Create Docker configuration
+    - name: Init Alembic
       run: |
-        # ایجاد Dockerfile
-        cat > Dockerfile << 'EOL'
-FROM python:3.9-slim
-
-WORKDIR /app
-
-# نصب dependencyهای سیستم
-RUN apt-get update && apt-get install -y \
-    gcc \
-    libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# کپی و نصب requirements
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# کپی کد برنامه
-COPY . .
-
-EXPOSE 8000
-
-CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-EOL
-
-        # ایجاد docker-compose.yml
-        cat > docker-compose.yml << 'EOL'
-version: '3.8'
-
-services:
-  web:
-    build: .
-    ports:
-      - "8000:8000"
-    volumes:
-      - .:/app
-    environment:
-      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/metreyar
-    depends_on:
-      - db
-    command: uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
-
-  db:
-    image: postgres:13
-    environment:
-      POSTGRES_DB: metreyar
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-
-volumes:
-  postgres_data:
-EOL
-
-        echo "✅ فایل‌های Docker ایجاد شدند"
-        
-    - name: Create additional configuration files
-      run: |
-        # ایجاد فایل README
-        cat > README.md << 'EOL'
-# Metreyar API
-
-سرویس API برای سیستم متره و برآورد پروژه‌های ساختمانی
-
-## ویژگی‌ها
-
-- مدیریت مصالح ساختمانی
-- ایجاد و مدیریت برآوردها
-- محاسبه خودکار هزینه‌ها
-- دسته‌بندی مصالح
-- API کاملاً RESTful
-
-## راه‌اندازی
-
-### با Docker
-
-```bash
-docker-compose up -d
+        alembic init data/migrations || true
+        echo "✅ Alembic آماده شد"

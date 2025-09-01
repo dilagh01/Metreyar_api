@@ -11,3 +11,7 @@ fastapi
 uvicorn
 paddlepaddle
 paddleocr
+fastapi
+sqlalchemy
+pydantic
+python-multipart

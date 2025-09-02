@@ -1,313 +1,434 @@
-name: Full project structure setup
+name: Build Complete Project Structure
 
 on:
+  workflow_dispatch:
   push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+    branches: [main]
+    paths:
+      - '.github/workflows/setup-structure.yml'
 
 jobs:
-  setup-project:
+  build-project-structure:
     runs-on: ubuntu-latest
+    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Create project structure
+      run: |
+        # ایجاد ساختار دایرکتوری‌های اصلی
+        mkdir -p backend/app/{api/v1,models,schemas,database,core}
+        mkdir -p backend/tests
+        mkdir -p data/migrations
+        mkdir -p scripts
+        
+        # ایجاد فایل‌های __init__.py
+        for dir in backend backend/app backend/app/api backend/app/api/v1 backend/app/models \
+                  backend/app/schemas backend/app/database backend/app/core backend/tests; do
+          touch $dir/__init__.py
+        done
+        
+        echo "✅ ساختار دایرکتوری‌ها ایجاد شد"
+        
+    - name: Create main application files
+      run: |
+        # ایجاد فایل main.py
+        cat > backend/app/main.py << 'EOL'
+from fastapi import FastAPI, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.api.v1 import api_router
+from app.database.session import get_db
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
+app = FastAPI(title="Construction Estimator API", version="1.0.0")
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install poetry
+@app.get("/health")
+async def health_check(db: AsyncSession = Depends(get_db)):
+    try:
+        await db.execute("SELECT 1")
+        return {"status": "healthy", "database": "connected"}
+    except Exception:
+        return {"status": "healthy", "database": "disconnected"}
 
-      - name: Create backend project structure
-        run: |
-          mkdir -p backend/app/api/v1
-          mkdir -p backend/app/models
-          mkdir -p backend/app/schemas
-          mkdir -p backend/app/database
-          mkdir -p backend/tests
-          mkdir -p backend/data/migrations
+@app.get("/")
+async def root():
+    return {
+        "message": "خوش آمدید به سرویس متره و برآورد",
+        "version": "1.0.0",
+        "docs": "/docs"
+    }
 
-          # main.py
-          cat << 'EOF' > backend/app/main.py
-          from fastapi import FastAPI, Depends
-          from sqlalchemy.ext.asyncio import AsyncSession
-          from app.api.v1 import api_router
-          from app.database.session import get_db
+app.include_router(api_router, prefix="/api/v1")
+EOL
 
-          app = FastAPI(title="Construction Estimator API")
+        echo "✅ فایل main.py ایجاد شد"
+        
+    - name: Create database configuration
+      run: |
+        # ایجاد فایل session.py
+        cat > backend/app/database/session.py << 'EOL'
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.ext.asyncio import AsyncEngine
+from typing import AsyncGenerator
+import os
 
-          @app.get("/health")
-          async def health_check(db: AsyncSession = Depends(get_db)):
-              try:
-                  await db.execute("SELECT 1")
-                  return {"status": "healthy", "database": "connected"}
-              except Exception:
-                  return {"status": "healthy", "database": "disconnected"}
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./metreyar.db")
 
-          app.include_router(api_router, prefix="/api/v1")
-          EOF
+engine: AsyncEngine = create_async_engine(
+    DATABASE_URL,
+    echo=True,
+    future=True
+)
 
-          # __init__.py for v1
-          cat << 'EOF' > backend/app/api/v1/__init__.py
-          from fastapi import APIRouter
-          from app.api.v1 import materials, estimations, categories
+AsyncSessionLocal = sessionmaker(
+    engine, class_=AsyncSession, expire_on_commit=False
+)
 
-          api_router = APIRouter()
-          api_router.include_router(materials.router, prefix="/materials", tags=["materials"])
-          api_router.include_router(estimations.router, prefix="/estimations", tags=["estimations"])
-          api_router.include_router(categories.router, prefix="/categories", tags=["categories"])
-          EOF
+Base = declarative_base()
 
-          # materials.py
-          cat << 'EOF' > backend/app/api/v1/materials.py
-          from fastapi import APIRouter, Depends, HTTPException, status
-          from sqlalchemy.ext.asyncio import AsyncSession
-          from sqlalchemy.future import select
-          from typing import List
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
+EOL
 
-          from app.database.session import get_db
-          from app.models.material import Material
-          from app.schemas.material import MaterialCreate, MaterialResponse, MaterialUpdate
+        echo "✅ فایل‌های دیتابیس ایجاد شدند"
+        
+    - name: Create models
+      run: |
+        # مدل Material
+        cat > backend/app/models/material.py << 'EOL'
+from sqlalchemy import Column, String, Float, Text, ForeignKey
+from sqlalchemy.orm import relationship
+from app.database.session import Base
 
-          router = APIRouter()
+class Material(Base):
+    __tablename__ = "materials"
+    
+    id = Column(String, primary_key=True, index=True)
+    name = Column(String(100), nullable=False, index=True)
+    description = Column(Text)
+    unit = Column(String(20), nullable=False)
+    unit_price = Column(Float, nullable=False)
+    category = Column(String(50), nullable=False)
+    code = Column(String(20), unique=True)
+    
+    estimation_items = relationship("EstimationItem", back_populates="material")
+EOL
 
-          @router.get("/", response_model=List[MaterialResponse])
-          async def get_materials(db: AsyncSession = Depends(get_db)):
-              result = await db.execute(select(Material))
-              return result.scalars().all()
+        # مدل Estimation
+        cat > backend/app/models/estimation.py << 'EOL'
+from sqlalchemy import Column, String, Float, Text, ForeignKey, DateTime
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
+from app.database.session import Base
 
-          @router.post("/", response_model=MaterialResponse, status_code=status.HTTP_201_CREATED)
-          async def create_material(material: MaterialCreate, db: AsyncSession = Depends(get_db)):
-              db_material = Material(**material.dict())
-              db.add(db_material)
-              await db.commit()
-              await db.refresh(db_material)
-              return db_material
+class Estimation(Base):
+    __tablename__ = "estimations"
+    
+    id = Column(String, primary_key=True, index=True)
+    title = Column(String(200), nullable=False)
+    description = Column(Text)
+    total_cost = Column(Float, default=0.0)
+    status = Column(String(20), default="draft")
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    items = relationship("EstimationItem", back_populates="estimation", cascade="all, delete-orphan")
 
-          @router.put("/{material_id}", response_model=MaterialResponse)
-          async def update_material(material_id: int, material_update: MaterialUpdate, db: AsyncSession = Depends(get_db)):
-              result = await db.execute(select(Material).where(Material.id == material_id))
-              db_material = result.scalar_one_or_none()
-              if not db_material:
-                  raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="مصالح پیدا نشد")
+class EstimationItem(Base):
+    __tablename__ = "estimation_items"
+    
+    id = Column(String, primary_key=True, index=True)
+    estimation_id = Column(ForeignKey("estimations.id"), nullable=False)
+    material_id = Column(ForeignKey("materials.id"), nullable=False)
+    quantity = Column(Float, nullable=False)
+    unit_price = Column(Float, nullable=False)
+    total_price = Column(Float, nullable=False)
+    notes = Column(Text)
+    created_at = Column(DateTime, server_default=func.now())
+    
+    estimation = relationship("Estimation", back_populates="items")
+    material = relationship("Material", back_populates="estimation_items")
+EOL
 
-              for field, value in material_update.dict(exclude_unset=True).items():
-                  setattr(db_material, field, value)
+        # مدل Category
+        cat > backend/app/models/category.py << 'EOL'
+from sqlalchemy import Column, String, Text, DateTime
+from sqlalchemy.sql import func
+from app.database.session import Base
 
-              await db.commit()
-              await db.refresh(db_material)
-              return db_material
+class Category(Base):
+    __tablename__ = "categories"
+    
+    id = Column(String, primary_key=True, index=True)
+    name = Column(String(50), unique=True, nullable=False)
+    description = Column(Text)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+EOL
 
-          @router.delete("/{material_id}", status_code=status.HTTP_204_NO_CONTENT)
-          async def delete_material(material_id: int, db: AsyncSession = Depends(get_db)):
-              result = await db.execute(select(Material).where(Material.id == material_id))
-              db_material = result.scalar_one_or_none()
-              if not db_material:
-                  raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="مصالح پیدا نشد")
+        echo "✅ مدل‌های دیتابیس ایجاد شدند"
+        
+    - name: Create API routes
+      run: |
+        # ایجاد router اصلی
+        cat > backend/app/api/v1/__init__.py << 'EOL'
+from fastapi import APIRouter
+from app.api.v1 import materials, estimations, categories
 
-              await db.delete(db_material)
-              await db.commit()
-          EOF
+api_router = APIRouter()
 
-          # estimations.py
-          cat << 'EOF' > backend/app/api/v1/estimations.py
-          from fastapi import APIRouter, Depends, HTTPException, status
-          from sqlalchemy.ext.asyncio import AsyncSession
-          from sqlalchemy.future import select
-          from typing import List
+api_router.include_router(materials.router, prefix="/materials", tags=["materials"])
+api_router.include_router(estimations.router, prefix="/estimations", tags=["estimations"])
+api_router.include_router(categories.router, prefix="/categories", tags=["categories"])
+EOL
 
-          from app.database.session import get_db
-          from app.models.estimation import Estimation
-          from app.schemas.estimation import EstimationCreate, EstimationResponse, EstimationUpdate
+        # ایجاد endpoint مصالح
+        cat > backend/app/api/v1/materials.py << 'EOL'
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from typing import List, Optional
+import uuid
 
-          router = APIRouter()
+from app.database.session import get_db
+from app.models.material import Material
+from app.schemas.material import MaterialCreate, MaterialResponse, MaterialUpdate
 
-          @router.get("/", response_model=List[EstimationResponse])
-          async def get_estimations(db: AsyncSession = Depends(get_db)):
-              result = await db.execute(select(Estimation))
-              return result.scalars().all()
+router = APIRouter()
 
-          @router.get("/{estimation_id}", response_model=EstimationResponse)
-          async def get_estimation(estimation_id: int, db: AsyncSession = Depends(get_db)):
-              result = await db.execute(select(Estimation).where(Estimation.id == estimation_id))
-              estimation = result.scalar_one_or_none()
-              if not estimation:
-                  raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="برآورد پیدا نشد")
-              return estimation
+@router.get("/", response_model=List[MaterialResponse])
+async def get_materials(
+    skip: int = 0,
+    limit: int = 100,
+    category: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    query = select(Material)
+    if category:
+        query = query.where(Material.category == category)
+    
+    result = await db.execute(query.offset(skip).limit(limit))
+    return result.scalars().all()
 
-          @router.post("/", response_model=EstimationResponse, status_code=status.HTTP_201_CREATED)
-          async def create_estimation(estimation: EstimationCreate, db: AsyncSession = Depends(get_db)):
-              db_estimation = Estimation(**estimation.dict())
-              db.add(db_estimation)
-              await db.commit()
-              await db.refresh(db_estimation)
-              return db_estimation
+@router.get("/{material_id}", response_model=MaterialResponse)
+async def get_material(material_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Material).where(Material.id == material_id))
+    material = result.scalar_one_or_none()
+    if not material:
+        raise HTTPException(status_code=404, detail="مصالح پیدا نشد")
+    return material
 
-          @router.put("/{estimation_id}", response_model=EstimationResponse)
-          async def update_estimation(estimation_id: int, estimation_update: EstimationUpdate, db: AsyncSession = Depends(get_db)):
-              result = await db.execute(select(Estimation).where(Estimation.id == estimation_id))
-              db_estimation = result.scalar_one_or_none()
-              if not db_estimation:
-                  raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="برآورد پیدا نشد")
+@router.post("/", response_model=MaterialResponse, status_code=201)
+async def create_material(material: MaterialCreate, db: AsyncSession = Depends(get_db)):
+    db_material = Material(
+        id=str(uuid.uuid4()),
+        **material.dict()
+    )
+    db.add(db_material)
+    await db.commit()
+    await db.refresh(db_material)
+    return db_material
 
-              for field, value in estimation_update.dict(exclude_unset=True).items():
-                  setattr(db_estimation, field, value)
+@router.put("/{material_id}", response_model=MaterialResponse)
+async def update_material(
+    material_id: str, 
+    material_update: MaterialUpdate, 
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(select(Material).where(Material.id == material_id))
+    db_material = result.scalar_one_or_none()
+    if not db_material:
+        raise HTTPException(status_code=404, detail="مصالح پیدا نشد")
+    
+    for field, value in material_update.dict(exclude_unset=True).items():
+        setattr(db_material, field, value)
+    
+    await db.commit()
+    await db.refresh(db_material)
+    return db_material
 
-              await db.commit()
-              await db.refresh(db_estimation)
-              return db_estimation
+@router.delete("/{material_id}", status_code=204)
+async def delete_material(material_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Material).where(Material.id == material_id))
+    material = result.scalar_one_or_none()
+    if not material:
+        raise HTTPException(status_code=404, detail="مصالح پیدا نشد")
+    
+    await db.delete(material)
+    await db.commit()
+EOL
 
-          @router.delete("/{estimation_id}", status_code=status.HTTP_204_NO_CONTENT)
-          async def delete_estimation(estimation_id: int, db: AsyncSession = Depends(get_db)):
-              result = await db.execute(select(Estimation).where(Estimation.id == estimation_id))
-              db_estimation = result.scalar_one_or_none()
-              if not db_estimation:
-                  raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="برآورد پیدا نشد")
+        # ایجاد endpoint برآوردها (خلاصه)
+        cat > backend/app/api/v1/estimations.py << 'EOL'
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from typing import List, Optional
+import uuid
 
-              await db.delete(db_estimation)
-              await db.commit()
-          EOF
+from app.database.session import get_db
+from app.models.estimation import Estimation
+from app.schemas.estimation import EstimationCreate, EstimationResponse, EstimationUpdate
 
-          # categories.py
-          cat << 'EOF' > backend/app/api/v1/categories.py
-          from fastapi import APIRouter, Depends, HTTPException, status
-          from sqlalchemy.ext.asyncio import AsyncSession
-          from sqlalchemy.future import select
-          from typing import List
+router = APIRouter()
 
-          from app.database.session import get_db
-          from app.models.category import Category
-          from app.schemas.category import CategoryCreate, CategoryResponse, CategoryUpdate
+@router.get("/", response_model=List[EstimationResponse])
+async def get_estimations(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Estimation))
+    return result.scalars().all()
 
-          router = APIRouter()
+# endpoints دیگر به صورت مشابه اضافه شوند
+EOL
 
-          @router.get("/", response_model=List[CategoryResponse])
-          async def get_categories(db: AsyncSession = Depends(get_db)):
-              result = await db.execute(select(Category))
-              return result.scalars().all()
+        echo "✅ endpointهای API ایجاد شدند"
+        
+    - name: Create schemas
+      run: |
+        # schema مصالح
+        cat > backend/app/schemas/material.py << 'EOL'
+from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime
 
-          @router.post("/", response_model=CategoryResponse, status_code=status.HTTP_201_CREATED)
-          async def create_category(category: CategoryCreate, db: AsyncSession = Depends(get_db)):
-              db_category = Category(**category.dict())
-              db.add(db_category)
-              await db.commit()
-              await db.refresh(db_category)
-              return db_category
+class MaterialBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    unit: str
+    unit_price: float
+    category: str
+    code: Optional[str] = None
 
-          @router.put("/{category_id}", response_model=CategoryResponse)
-          async def update_category(category_id: int, category_update: CategoryUpdate, db: AsyncSession = Depends(get_db)):
-              result = await db.execute(select(Category).where(Category.id == category_id))
-              db_category = result.scalar_one_or_none()
-              if not db_category:
-                  raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="دسته‌بندی پیدا نشد")
+class MaterialCreate(MaterialBase):
+    pass
 
-              for field, value in category_update.dict(exclude_unset=True).items():
-                  setattr(db_category, field, value)
+class MaterialUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    unit: Optional[str] = None
+    unit_price: Optional[float] = None
+    category: Optional[str] = None
+    code: Optional[str] = None
 
-              await db.commit()
-              await db.refresh(db_category)
-              return db_category
+class MaterialResponse(MaterialBase):
+    id: str
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+EOL
 
-          @router.delete("/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
-          async def delete_category(category_id: int, db: AsyncSession = Depends(get_db)):
-              result = await db.execute(select(Category).where(Category.id == category_id))
-              db_category = result.scalar_one_or_none()
-              if not db_category:
-                  raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="دسته‌بندی پیدا نشد")
+        # schema برآوردها
+        cat > backend/app/schemas/estimation.py << 'EOL'
+from pydantic import BaseModel
+from typing import Optional, List
+from datetime import datetime
 
-              await db.delete(db_category)
-              await db.commit()
-          EOF
+class EstimationBase(BaseModel):
+    title: str
+    description: Optional[str] = None
+    status: str = "draft"
 
-          # schemas: material
-          cat << 'EOF' > backend/app/schemas/material.py
-          from pydantic import BaseModel
-          from typing import Optional
-          from datetime import datetime
+class EstimationCreate(EstimationBase):
+    pass
 
-          class MaterialBase(BaseModel):
-              name: str
-              unit: str
-              unit_price: float
-              category_id: int
+class EstimationUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
 
-          class MaterialCreate(MaterialBase):
-              pass
+class EstimationResponse(EstimationBase):
+    id: str
+    total_cost: float
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+EOL
 
-          class MaterialUpdate(BaseModel):
-              name: Optional[str] = None
-              unit: Optional[str] = None
-              unit_price: Optional[float] = None
-              category_id: Optional[int] = None
+        echo "✅ schemaهای Pydantic ایجاد شدند"
+        
+    - name: Create configuration files
+      run: |
+        # requirements.txt
+        cat > requirements.txt << 'EOL'
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+sqlalchemy==2.0.23
+aiosqlite==0.19.0
+alembic==1.12.1
+pydantic==2.5.0
+python-multipart==0.0.6
+python-dotenv==1.0.0
+pytest==7.4.3
+httpx==0.25.2
+EOL
 
-          class MaterialResponse(MaterialBase):
-              id: int
-              created_at: datetime
-              updated_at: datetime
+        # .env.example
+        cat > .env.example << 'EOL'
+DATABASE_URL=sqlite+aiosqlite:///./metreyar.db
+SECRET_KEY=your-super-secret-key-change-in-production
+DEBUG=True
+EOL
 
-              class Config:
-                  from_attributes = True
-          EOF
+        # Dockerfile
+        cat > Dockerfile << 'EOL'
+FROM python:3.11-slim
 
-          # schemas: estimation
-          cat << 'EOF' > backend/app/schemas/estimation.py
-          from pydantic import BaseModel
-          from typing import Optional
-          from datetime import datetime
+WORKDIR /app
 
-          class EstimationBase(BaseModel):
-              title: str
-              description: Optional[str] = None
-              total_cost: float = 0.0
-              status: str = "draft"
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-          class EstimationCreate(EstimationBase):
-              pass
+COPY . .
 
-          class EstimationUpdate(BaseModel):
-              title: Optional[str] = None
-              description: Optional[str] = None
-              total_cost: Optional[float] = None
-              status: Optional[str] = None
+EXPOSE 8000
 
-          class EstimationResponse(EstimationBase):
-              id: int
-              created_at: datetime
-              updated_at: datetime
+CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+EOL
 
-              class Config:
-                  from_attributes = True
-          EOF
+        # docker-compose.yml
+        cat > docker-compose.yml << 'EOL'
+version: '3.8'
 
-          # schemas: category
-          cat << 'EOF' > backend/app/schemas/category.py
-          from pydantic import BaseModel
-          from typing import Optional
-          from datetime import datetime
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:///./metreyar.db
+      - DEBUG=True
+    command: uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
+EOL
 
-          class CategoryBase(BaseModel):
-              name: str
-              description: Optional[str] = None
+        # README.md
+        cat > README.md << 'EOL'
+# Metreyar API
 
-          class CategoryCreate(CategoryBase):
-              pass
+سرویس API برای سیستم متره و برآورد پروژه‌های ساختمانی
 
-          class CategoryUpdate(BaseModel):
-              name: Optional[str] = None
-              description: Optional[str] = None
+## راه‌اندازی
 
-          class CategoryResponse(CategoryBase):
-              id: int
-              created_at: datetime
-              updated_at: datetime
-
-              class Config:
-                  from_attributes = True
-          EOF
+1. نصب dependencies:
+```bash
+pip install -r requirements.txt

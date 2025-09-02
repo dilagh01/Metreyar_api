@@ -14,13 +14,11 @@ on:
 jobs:
   create-structure:
     runs-on: ubuntu-latest
-    
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
-      
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
@@ -117,7 +115,7 @@ async def get_db():
             raise
         finally:
             await session.close()
-EOL
+        EOL
 
         cat > backend/app/database/base.py << 'EOL'
 from sqlalchemy.orm import declarative_base
@@ -130,7 +128,7 @@ class BaseModel(Base):
     id = Column(Integer, primary_key=True, index=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
-EOL
+        EOL
 
     - name: Create core configuration and security
       run: |
@@ -157,7 +155,7 @@ class Settings(BaseSettings):
         env_file = ".env"
 
 settings = Settings()
-EOL
+        EOL
 
         cat > backend/app/core/security.py << 'EOL'
 from datetime import datetime, timedelta
@@ -185,7 +183,7 @@ def decode_access_token(token: str):
         return payload
     except JWTError:
         return None
-EOL
+        EOL
 
     - name: Create models
       run: |
@@ -201,7 +199,7 @@ class Material(BaseModel):
     unit_price = Column(Float, nullable=False)
     category = Column(String(50), nullable=False)
     code = Column(String(20), unique=True)
-EOL
+        EOL
 
     - name: Create requirements and env
       run: |
@@ -219,7 +217,7 @@ passlib[bcrypt]==1.7.4
 python-dotenv==1.0.0
 pytest==7.4.3
 httpx==0.25.2
-EOL
+        EOL
 
         cat > .env.example << 'EOL'
 DATABASE_URL=sqlite+aiosqlite:///./metreyar.db
@@ -230,4 +228,4 @@ DEBUG=True
 PROJECT_NAME=Metreyar API
 VERSION=1.0.0
 API_V1_STR=/api/v1
-EOL
+        EOL

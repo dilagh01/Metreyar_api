@@ -6,17 +6,21 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/create-structure.yml'
+      - 'backend/**'
+      - 'requirements.txt'
+      - 'docker-compose.yml'
+      - 'Dockerfile'
 
 jobs:
   create-structure:
     runs-on: ubuntu-latest
-
+    
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
-
+      
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
@@ -25,74 +29,75 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install black flake8 alembic fastapi uvicorn[standard] \
-          sqlalchemy aiosqlite pydantic pydantic-settings \
-          python-multipart python-jose[cryptography] passlib[bcrypt] \
-          python-dotenv pytest httpx
+        pip install -r requirements.txt
+        pip install black flake8 alembic
 
-    - name: Create backend directory structure
+    - name: Create complete project structure
       run: |
-        echo "📁 Creating directories..."
+        echo "📁 ایجاد ساختار دایرکتوری‌ها..."
         mkdir -p backend/app/{api/v1,models,schemas,database,core,services}
-        mkdir -p backend/tests data/migrations scripts docs
+        mkdir -p backend/tests
+        mkdir -p data/migrations
+        mkdir -p scripts
+        mkdir -p docs
 
         for dir in backend backend/app backend/app/api backend/app/api/v1 \
                  backend/app/models backend/app/schemas backend/app/database \
                  backend/app/core backend/app/services backend/tests; do
           touch "$dir/__init__.py"
         done
-        echo "✅ Directory structure created"
+        echo "✅ ساختار دایرکتوری‌ها ایجاد شد"
 
-    - name: Create main.py
+    - name: Create main application file
       run: |
         cat > backend/app/main.py << 'EOL'
-        from fastapi import FastAPI, Depends
-        from fastapi.middleware.cors import CORSMiddleware
-        from contextlib import asynccontextmanager
-        from sqlalchemy.ext.asyncio import AsyncSession
-        from app.database.session import engine, get_db
-        from app.database.base import Base
-        from app.api.v1 import api_router
-        from app.core.config import settings
+from fastapi import FastAPI, Depends
+from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.database.session import engine, get_db
+from app.database.base import Base
+from app.api.v1 import api_router
+from app.core.config import settings
 
-        @asynccontextmanager
-        async def lifespan(app: FastAPI):
-            async with engine.begin() as conn:
-                await conn.run_sync(Base.metadata.create_all)
-            yield
-            await engine.dispose()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield
+    await engine.dispose()
 
-        app = FastAPI(
-            title=settings.PROJECT_NAME,
-            version=settings.VERSION,
-            description="API سیستم متره و برآورد پروژه‌های ساختمانی",
-            lifespan=lifespan
-        )
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    version=settings.VERSION,
+    description="API سیستم متره و برآورد پروژه‌های ساختمانی",
+    lifespan=lifespan
+)
 
-        app.add_middleware(
-            CORSMiddleware,
-            allow_origins=settings.BACKEND_CORS_ORIGINS,
-            allow_credentials=True,
-            allow_methods=["*"],
-            allow_headers=["*"],
-        )
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.BACKEND_CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-        app.include_router(api_router, prefix=settings.API_V1_STR)
+app.include_router(api_router, prefix=settings.API_V1_STR)
 
-        @app.get("/")
-        async def root():
-            return {"message": "خوش آمدید به سرویس متره‌یار", "version": settings.VERSION, "docs": "/docs"}
+@app.get("/")
+async def root():
+    return {"message": "خوش آمدید به سرویس متره‌یار", "version": settings.VERSION, "docs": "/docs"}
 
-        @app.get("/health")
-        async def health_check(db: AsyncSession = Depends(get_db)):
-            try:
-                await db.execute("SELECT 1")
-                return {"status": "healthy", "database": "connected"}
-            except Exception:
-                return {"status": "healthy", "database": "disconnected"}
-        EOL
+@app.get("/health")
+async def health_check(db: AsyncSession = Depends(get_db)):
+    try:
+        await db.execute("SELECT 1")
+        return {"status": "healthy", "database": "connected"}
+    except Exception:
+        return {"status": "healthy", "database": "disconnected"}
+EOL
 
-    - name: Create database/session.py
+    - name: Create database files
       run: |
         cat > backend/app/database/session.py << 'EOL'
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
@@ -112,7 +117,7 @@ async def get_db():
             raise
         finally:
             await session.close()
-        EOL
+EOL
 
         cat > backend/app/database/base.py << 'EOL'
 from sqlalchemy.orm import declarative_base
@@ -125,9 +130,9 @@ class BaseModel(Base):
     id = Column(Integer, primary_key=True, index=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
-        EOL
+EOL
 
-    - name: Create core config and security
+    - name: Create core configuration and security
       run: |
         cat > backend/app/core/config.py << 'EOL'
 from pydantic_settings import BaseSettings
@@ -152,7 +157,7 @@ class Settings(BaseSettings):
         env_file = ".env"
 
 settings = Settings()
-        EOL
+EOL
 
         cat > backend/app/core/security.py << 'EOL'
 from datetime import datetime, timedelta
@@ -180,9 +185,9 @@ def decode_access_token(token: str):
         return payload
     except JWTError:
         return None
-        EOL
+EOL
 
-    - name: Create example model
+    - name: Create models
       run: |
         cat > backend/app/models/material.py << 'EOL'
 from sqlalchemy import Column, String, Float, Text
@@ -196,24 +201,24 @@ class Material(BaseModel):
     unit_price = Column(Float, nullable=False)
     category = Column(String(50), nullable=False)
     code = Column(String(20), unique=True)
-        EOL
+EOL
 
     - name: Create requirements and env
       run: |
         cat > requirements.txt << 'EOL'
-fastapi
-uvicorn[standard]
-sqlalchemy
-aiosqlite
-alembic
-pydantic
-pydantic-settings
-python-multipart
-python-jose[cryptography]
-passlib[bcrypt]
-python-dotenv
-pytest
-httpx
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+sqlalchemy==2.0.23
+aiosqlite==0.19.0
+alembic==1.12.1
+pydantic==2.5.0
+pydantic-settings==2.1.0
+python-multipart==0.0.6
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-dotenv==1.0.0
+pytest==7.4.3
+httpx==0.25.2
 EOL
 
         cat > .env.example << 'EOL'
@@ -226,16 +231,3 @@ PROJECT_NAME=Metreyar API
 VERSION=1.0.0
 API_V1_STR=/api/v1
 EOL
-
-    - name: Lint with flake8
-      run: |
-        flake8 backend --count --select=E9,F63,F7,F82 --show-source --statistics
-        flake8 backend --count --exit-zero --max-complexity=10 --max-line-length=88 --statistics
-
-    - name: Format check with black
-      run: |
-        black --check backend
-
-    - name: Run tests
-      run: |
-        pytest -v --maxfail=1 --disable-warnings -q

@@ -33,7 +33,7 @@ jobs:
 
 - name: Create complete project structure
   run: |
-    echo "📁 ایجاد ساختار دایرکتوری‌ها..."
+    echo "Creating directory structure..."
     mkdir -p backend/app/api/v1
     mkdir -p backend/app/models
     mkdir -p backend/app/schemas
@@ -50,7 +50,7 @@ jobs:
              backend/app/core backend/app/services backend/tests; do
       touch "$dir/__init__.py"
     done
-    echo "✅ ساختار دایرکتوری‌ها ایجاد شد"
+    echo "Directory structure created successfully"
 
 - name: Create main application files
   run: |

@@ -30,21 +30,27 @@ jobs:
         pip install -r requirements.txt
         pip install black flake8 alembic
 
-    - name: Create complete project structure
-      run: |
-        echo "📁 ایجاد ساختار دایرکتوری‌ها..."
-        mkdir -p backend/app/{api/v1,models,schemas,database,core,services}
-        mkdir -p backend/tests
-        mkdir -p data/migrations
-        mkdir -p scripts
-        mkdir -p docs
 
-        for dir in backend backend/app backend/app/api backend/app/api/v1 \
-                 backend/app/models backend/app/schemas backend/app/database \
-                 backend/app/core backend/app/services backend/tests; do
-          touch "$dir/__init__.py"
-        done
-        echo "✅ ساختار دایرکتوری‌ها ایجاد شد"
+- name: Create complete project structure
+  run: |
+    echo "📁 ایجاد ساختار دایرکتوری‌ها..."
+    mkdir -p backend/app/api/v1
+    mkdir -p backend/app/models
+    mkdir -p backend/app/schemas
+    mkdir -p backend/app/database
+    mkdir -p backend/app/core
+    mkdir -p backend/app/services
+    mkdir -p backend/tests
+    mkdir -p data/migrations
+    mkdir -p scripts
+    mkdir -p docs
+
+    for dir in backend backend/app backend/app/api backend/app/api/v1 \
+             backend/app/models backend/app/schemas backend/app/database \
+             backend/app/core backend/app/services backend/tests; do
+      touch "$dir/__init__.py"
+    done
+    echo "✅ ساختار دایرکتوری‌ها ایجاد شد"
 
 - name: Create main application files
   run: |

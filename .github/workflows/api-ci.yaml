@@ -92,7 +92,7 @@ jobs:
                 return {"status": "healthy", "database": "disconnected"}
         EOL
 
-    - name: Create database files
+    - name: Create database/session.py
       run: |
         cat > backend/app/database/session.py << 'EOL'
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
@@ -112,7 +112,7 @@ async def get_db():
             raise
         finally:
             await session.close()
-EOL
+        EOL
 
         cat > backend/app/database/base.py << 'EOL'
 from sqlalchemy.orm import declarative_base
@@ -125,7 +125,7 @@ class BaseModel(Base):
     id = Column(Integer, primary_key=True, index=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
-EOL
+        EOL
 
     - name: Create core config and security
       run: |
@@ -152,7 +152,7 @@ class Settings(BaseSettings):
         env_file = ".env"
 
 settings = Settings()
-EOL
+        EOL
 
         cat > backend/app/core/security.py << 'EOL'
 from datetime import datetime, timedelta
@@ -180,7 +180,7 @@ def decode_access_token(token: str):
         return payload
     except JWTError:
         return None
-EOL
+        EOL
 
     - name: Create example model
       run: |
@@ -196,7 +196,7 @@ class Material(BaseModel):
     unit_price = Column(Float, nullable=False)
     category = Column(String(50), nullable=False)
     code = Column(String(20), unique=True)
-EOL
+        EOL
 
     - name: Create requirements and env
       run: |

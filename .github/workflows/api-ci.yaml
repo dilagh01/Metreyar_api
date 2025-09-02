@@ -14,13 +14,11 @@ on:
 jobs:
   create-structure:
     runs-on: ubuntu-latest
-    
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
-      
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
@@ -59,21 +57,18 @@ jobs:
     from app.database.base import Base
     from app.api.v1 import api_router
     from app.core.config import settings
-    
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         yield
         await engine.dispose()
-    
     app = FastAPI(
         title=settings.PROJECT_NAME,
         version=settings.VERSION,
         description="API سیستم متره و برآورد پروژه‌های ساختمانی",
         lifespan=lifespan
     )
-    
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.BACKEND_CORS_ORIGINS,
@@ -81,13 +76,10 @@ jobs:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    
     app.include_router(api_router, prefix=settings.API_V1_STR)
-    
     @app.get("/")
     async def root():
         return {"message": "خوش آمدید به سرویس متره‌یار", "version": settings.VERSION, "docs": "/docs"}
-    
     @app.get("/health")
     async def health_check(db: AsyncSession = Depends(get_db)):
         try:

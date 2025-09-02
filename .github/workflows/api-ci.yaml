@@ -4,8 +4,6 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths:
-      - '.github/workflows/setup-structure.yml'
 
 jobs:
   build-project-structure:
@@ -21,6 +19,12 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install poetry
+          poetry install || true  # اگر pyproject.toml خالی باشه fail نمی‌کنه
 
       - name: Create project structure
         run: |
@@ -101,4 +105,10 @@ jobs:
           EOL
           echo "✅ فایل‌های دیتابیس ایجاد شدند"
 
-      # ادامه job ها دقیقا مثل قبل ...
+      - name: Install test dependencies
+        run: |
+          pip install pytest httpx pytest-asyncio python-multipart
+
+      - name: Run tests
+        run: |
+          pytest backend/tests -v

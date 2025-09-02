@@ -43,54 +43,54 @@ jobs:
         done
         echo "✅ Directory structure created"
 
-    - name: Create main.py
+- name: Create main.py
       run: |
         cat > backend/app/main.py << 'EOL'
-from fastapi import FastAPI, Depends
-from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.database.session import engine, get_db
-from app.database.base import Base
-from app.api.v1 import api_router
-from app.core.config import settings
+        from fastapi import FastAPI, Depends
+        from fastapi.middleware.cors import CORSMiddleware
+        from contextlib import asynccontextmanager
+        from sqlalchemy.ext.asyncio import AsyncSession
+        from app.database.session import engine, get_db
+        from app.database.base import Base
+        from app.api.v1 import api_router
+        from app.core.config import settings
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield
-    await engine.dispose()
+        @asynccontextmanager
+        async def lifespan(app: FastAPI):
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            yield
+            await engine.dispose()
 
-app = FastAPI(
-    title=settings.PROJECT_NAME,
-    version=settings.VERSION,
-    description="API سیستم متره و برآورد پروژه‌های ساختمانی",
-    lifespan=lifespan
-)
+        app = FastAPI(
+            title=settings.PROJECT_NAME,
+            version=settings.VERSION,
+            description="API سیستم متره و برآورد پروژه‌های ساختمانی",
+            lifespan=lifespan
+        )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.BACKEND_CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.BACKEND_CORS_ORIGINS,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
-app.include_router(api_router, prefix=settings.API_V1_STR)
+        app.include_router(api_router, prefix=settings.API_V1_STR)
 
-@app.get("/")
-async def root():
-    return {"message": "خوش آمدید به سرویس متره‌یار", "version": settings.VERSION, "docs": "/docs"}
+        @app.get("/")
+        async def root():
+            return {"message": "خوش آمدید به سرویس متره‌یار", "version": settings.VERSION, "docs": "/docs"}
 
-@app.get("/health")
-async def health_check(db: AsyncSession = Depends(get_db)):
-    try:
-        await db.execute("SELECT 1")
-        return {"status": "healthy", "database": "connected"}
-    except Exception:
-        return {"status": "healthy", "database": "disconnected"}
-EOL
+        @app.get("/health")
+        async def health_check(db: AsyncSession = Depends(get_db)):
+            try:
+                await db.execute("SELECT 1")
+                return {"status": "healthy", "database": "connected"}
+            except Exception:
+                return {"status": "healthy", "database": "disconnected"}
+        EOL
 
     - name: Create database files
       run: |

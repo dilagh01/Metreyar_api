@@ -48,7 +48,7 @@ jobs:
         done
         echo "✅ ساختار دایرکتوری‌ها ایجاد شد"
 
-- name: Create main application files
+    - name: Create main application files  # ✅ تورفت صحیح
       run: |
         cat > backend/app/main.py << 'EOL'
 from fastapi import FastAPI, Depends

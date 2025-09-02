@@ -1,4 +1,4 @@
-name: Create Project Structure with Empty Files
+name: Create Complete Project Structure
 
 on:
   workflow_dispatch:
@@ -6,42 +6,97 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/create-structure.yml'
+      - 'backend/**'
+      - 'requirements.txt'
+      - 'docker-compose.yml'
+      - 'Dockerfile'
 
 jobs:
   create-structure:
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
-      
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install black flake8 alembic
+
     - name: Create complete project structure
       run: |
         echo "📁 ایجاد ساختار دایرکتوری‌ها..."
-
-        # دایرکتوری‌های backend و app
         mkdir -p backend/app/{api/v1,models,schemas,database,core,services}
         mkdir -p backend/tests
-
-        # دایرکتوری‌های دیگر پروژه
         mkdir -p data/migrations
         mkdir -p scripts
         mkdir -p docs
 
-        # ایجاد __init__.py در پکیج‌ها
         for dir in backend backend/app backend/app/api backend/app/api/v1 \
                  backend/app/models backend/app/schemas backend/app/database \
                  backend/app/core backend/app/services backend/tests; do
           touch "$dir/__init__.py"
         done
+        echo "✅ ساختار دایرکتوری‌ها ایجاد شد"
 
-        # ایجاد فایل‌های اصلی خالی
+    - name: Create main application files
+      run: |
         touch backend/app/main.py
         touch backend/app/database/session.py
         touch backend/app/database/base.py
         touch backend/app/core/config.py
         touch backend/app/core/security.py
 
-        echo "✅ ساختار دایرکتوری‌ها و فایل‌های خالی ایجاد شد"
+    - name: Create models
+      run: |
+        touch backend/app/models/material.py
+        touch backend/app/models/estimation.py
+        touch backend/app/models/category.py
+        touch backend/app/models/user.py
+
+    - name: Create API routes
+      run: |
+        touch backend/app/api/v1/__init__.py
+        touch backend/app/api/v1/materials.py
+        touch backend/app/api/v1/estimations.py
+        touch backend/app/api/v1/categories.py
+        touch backend/app/api/v1/auth.py
+        touch backend/app/api/v1/users.py
+
+    - name: Create schemas
+      run: |
+        touch backend/app/schemas/material.py
+        touch backend/app/schemas/estimation.py
+        touch backend/app/schemas/category.py
+        touch backend/app/schemas/user.py
+
+    - name: Create configuration files
+      run: |
+        touch requirements.txt
+        touch .env.example
+
+    - name: Run Alembic migrations
+      run: alembic upgrade head
+
+    - name: Lint with flake8
+      run: |
+        flake8 backend --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 backend --count --exit-zero --max-complexity=10 --max-line-length=88 --statistics
+
+    - name: Format check with black
+      run: black --check backend
+
+    - name: Run tests
+      run: pytest -v --maxfail=1 --disable-warnings -q
+
+    - name: Docker build (test)
+      run: docker build -t metreyar-api .

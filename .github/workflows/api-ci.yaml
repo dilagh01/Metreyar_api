@@ -43,7 +43,7 @@ jobs:
         done
         echo "✅ Directory structure created"
 
-- name: Create main.py
+    - name: Create main.py
       run: |
         cat > backend/app/main.py << 'EOL'
         from fastapi import FastAPI, Depends

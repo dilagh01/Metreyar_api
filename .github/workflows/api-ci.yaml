@@ -1,8 +1,8 @@
 name: Create Project Structure
 
 on:
-  workflow_dispatch:       # اجرای دستی از تب Actions
-  push:                    # اجرای خودکار روی هر push به main
+  workflow_dispatch:
+  push:
     branches: [main]
 
 jobs:
@@ -15,10 +15,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
       - name: Create backend directory structure
         run: |
           echo "Creating directory structure..."
-          # Create main directories
           mkdir -p backend/app/api/v1
           mkdir -p backend/app/models
           mkdir -p backend/app/schemas
@@ -30,24 +34,19 @@ jobs:
           mkdir -p scripts
           mkdir -p docs
 
-          # Create __init__.py files
           for dir in backend backend/app backend/app/api backend/app/api/v1 \
                    backend/app/models backend/app/schemas backend/app/database \
                    backend/app/core backend/app/services backend/tests; do
             touch "$dir/__init__.py"
           done
 
-          echo "✅ Directory structure created successfully"
-          echo ""
-          echo "📂 Project structure:"
-          find backend -type d | sort
-
-      - name: Verify structure
+      - name: Commit and push changes
         run: |
-          echo "Verifying directory structure..."
-          if [ -d "backend/app/api/v1" ] && [ -d "backend/app/models" ] && [ -d "backend/app/database" ]; then
-            echo "✅ Directory structure verified successfully"
+          if [ -n "$(git status --porcelain)" ]; then
+            git add .
+            git commit -m "chore: create initial project structure [skip ci]"
+            git push origin main
+            echo "✅ Project structure committed and pushed"
           else
-            echo "❌ Directory structure verification failed"
-            exit 1
+            echo "ℹ️ No changes to commit"
           fi

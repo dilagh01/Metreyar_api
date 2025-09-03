@@ -23,43 +23,37 @@ jobs:
         echo "Creating project structure..."
         
         # Create requirements.txt
-        cat > requirements.txt << 'EOL'
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-EOL
+        echo "fastapi==0.104.1" > requirements.txt
+        echo "uvicorn[standard]==0.24.0" >> requirements.txt
         
         # Create main.py
-        cat > main.py << 'EOL'
-from fastapi import FastAPI
-
-app = FastAPI(
-    title="Metreyar API",
-    version="1.0.0",
-    description="Construction Estimation API"
-)
-
-@app.get("/")
-def read_root():
-    return {"message": "Metreyar API is running 🚀"}
-
-@app.get("/health")
-def health_check():
-    return {"status": "healthy"}
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-EOL
+        echo "from fastapi import FastAPI" > main.py
+        echo "" >> main.py
+        echo "app = FastAPI(" >> main.py
+        echo "    title='Metreyar API'," >> main.py
+        echo "    version='1.0.0'," >> main.py
+        echo "    description='Construction Estimation API'" >> main.py
+        echo ")" >> main.py
+        echo "" >> main.py
+        echo "@app.get('/')" >> main.py
+        echo "def read_root():" >> main.py
+        echo "    return {'message': 'Metreyar API is running 🚀'}" >> main.py
+        echo "" >> main.py
+        echo "@app.get('/health')" >> main.py
+        echo "def health_check():" >> main.py
+        echo "    return {'status': 'healthy'}" >> main.py
+        echo "" >> main.py
+        echo "if __name__ == '__main__':" >> main.py
+        echo "    import uvicorn" >> main.py
+        echo "    uvicorn.run(app, host='0.0.0.0', port=8000)" >> main.py
         
         # Create Dockerfile
-        cat > Dockerfile << 'EOL'
-FROM python:3.11-slim
-WORKDIR /app
-COPY . .
-RUN pip install --no-cache-dir fastapi==0.104.1 uvicorn[standard]==0.24.0
-EXPOSE 8000
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
-EOL
+        echo "FROM python:3.11-slim" > Dockerfile
+        echo "WORKDIR /app" >> Dockerfile
+        echo "COPY . ." >> Dockerfile
+        echo "RUN pip install --no-cache-dir fastapi==0.104.1 uvicorn[standard]==0.24.0" >> Dockerfile
+        echo "EXPOSE 8000" >> Dockerfile
+        echo 'CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]' >> Dockerfile
         
         # Create app directory structure
         mkdir -p app/core
@@ -78,6 +72,9 @@ EOL
         echo ""
         echo "=== requirements.txt content ==="
         cat requirements.txt
+        echo ""
+        echo "=== main.py first few lines ==="
+        head -10 main.py
 
     - name: Install dependencies
       run: |

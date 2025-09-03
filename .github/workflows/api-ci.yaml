@@ -1,112 +1,550 @@
-name: Create Complete Project Structure
+name: Create Metreyar Project Structure
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # Allows manual triggering
   push:
     branches: [main]
-    paths:
-      - '.github/workflows/api_ci.yaml'
 
 jobs:
-  create-structure:
+  create-project-structure:
     runs-on: ubuntu-latest
-
+    
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-
-    - name: Install dependencies
+      
+    - name: Create project structure
       run: |
-        python -m pip install --upgrade pip
-        pip install fastapi uvicorn sqlalchemy aiosqlite pydantic pydantic-settings python-jose passlib python-dotenv
-
-    - name: Create backend directory structure
-      run: |
-        echo "📁 Creating directory structure..."
-        mkdir -p backend/app/{api/v1,models,schemas,database,core,services}
-        mkdir -p backend/tests
-        mkdir -p data/migrations
-        mkdir -p scripts
-        mkdir -p docs
-
-        for dir in backend backend/app backend/app/api backend/app/api/v1 \
-                 backend/app/models backend/app/schemas backend/app/database \
-                 backend/app/core backend/app/services backend/tests; do
-          touch "$dir/__init__.py"
-        done
-
-        echo "✅ Directory structure created"
-
-    - name: Create main.py
-      run: |
-        cat > backend/app/main.py << 'EOL'
-from fastapi import FastAPI
-
-app = FastAPI(title="Metreyar API", version="1.0.0")
-
-@app.get("/")
-def root():
-    return {"message": "خوش آمدید به سرویس متره‌یار"}
-EOL
-
-    - name: Create database files
-      run: |
-        cat > backend/app/database/session.py << 'EOL'
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
-
-DATABASE_URL = "sqlite+aiosqlite:///./metreyar.db"
-engine = create_async_engine(DATABASE_URL, echo=True, future=True)
-AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-async def get_db():
-    async with AsyncSessionLocal() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
-        finally:
-            await session.close()
-EOL
-
-        cat > backend/app/database/base.py << 'EOL'
-from sqlalchemy.orm import declarative_base
-from sqlalchemy import Column, Integer, DateTime, func
-
-Base = declarative_base()
-
-class BaseModel(Base):
-    __abstract__ = True
-    id = Column(Integer, primary_key=True, index=True)
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
-EOL
-
-    - name: Create core config
-      run: |
-        cat > backend/app/core/config.py << 'EOL'
+        # Create main directories
+        mkdir -p app/{api/v1/endpoints,core,models,schemas,services,tests}
+        mkdir -p .github/workflows
+        mkdir -p migrations
+        mkdir -p backend
+        
+        # Create __init__.py files
+        touch app/__init__.py
+        touch app/api/__init__.py
+        touch app/api/v1/__init__.py
+        touch app/api/v1/endpoints/__init__.py
+        touch app/core/__init__.py
+        touch app/models/__init__.py
+        touch app/schemas/__init__.py
+        touch app/services/__init__.py
+        touch app/tests/__init__.py
+        
+        # Create core configuration files
+        cat > app/core/config.py << 'EOF'
 from pydantic_settings import BaseSettings
-from typing import List
+from typing import List, Optional
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Metreyar API"
     VERSION: str = "1.0.0"
     API_V1_STR: str = "/api/v1"
-    DATABASE_URL: str = "sqlite+aiosqlite:///./metreyar.db"
-    SECRET_KEY: str = "your-secret-key"
+    
+    # Database
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://user:password@localhost:5432/metreyar")
+    
+    # Security
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key-here")
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60*24*8
-    BACKEND_CORS_ORIGINS: List[str] = ["*"]
-    DEBUG: bool = True
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+    
+    # CORS
+    BACKEND_CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    
+    # Redis
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    
+    class Config:
+        case_sensitive = True
 
 settings = Settings()
-EOL
+EOF
+
+        # Create database configuration
+        cat > app/core/database.py << 'EOF'
+from sqlalchemy import create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+from .config import settings
+
+engine = create_engine(settings.DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+EOF
+
+        # Create security utilities
+        cat > app/core/security.py << 'EOF'
+from datetime import datetime, timedelta
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+from typing import Optional
+from .config import settings
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def verify_password(plain_password, hashed_password):
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password):
+    return pwd_context.hash(password)
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    return encoded_jwt
+EOF
+
+        # Create models
+        cat > app/models/user.py << 'EOF'
+from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from sqlalchemy.sql import func
+from app.core.database import Base
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    full_name = Column(String, nullable=False)
+    is_active = Column(Boolean, default=True)
+    is_superuser = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+EOF
+
+        cat > app/models/project.py << 'EOF'
+from sqlalchemy import Column, Integer, String, Float, Text, DateTime, ForeignKey
+from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
+from app.core.database import Base
+
+class Project(Base):
+    __tablename__ = "projects"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    description = Column(Text)
+    location = Column(String)
+    total_area = Column(Float)
+    total_cost = Column(Float)
+    status = Column(String, default="draft")
+    user_id = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    user = relationship("User")
+    items = relationship("Item", back_populates="project", cascade="all, delete-orphan")
+EOF
+
+        cat > app/models/item.py << 'EOF'
+from sqlalchemy import Column, Integer, String, Float, Text, DateTime, ForeignKey
+from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
+from app.core.database import Base
+
+class Item(Base):
+    __tablename__ = "items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    description = Column(Text)
+    unit = Column(String, nullable=False)
+    quantity = Column(Float, default=0.0)
+    unit_price = Column(Float, default=0.0)
+    total_price = Column(Float, default=0.0)
+    category = Column(String)
+    project_id = Column(Integer, ForeignKey("projects.id"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    project = relationship("Project", back_populates="items")
+    materials = relationship("Material", back_populates="item", cascade="all, delete-orphan")
+EOF
+
+        cat > app/models/material.py << 'EOF'
+from sqlalchemy import Column, Integer, String, Float, Text, DateTime, ForeignKey
+from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
+from app.core.database import Base
+
+class Material(Base):
+    __tablename__ = "materials"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    description = Column(Text)
+    unit = Column(String, nullable=False)
+    quantity = Column(Float, default=0.0)
+    unit_price = Column(Float, default=0.0)
+    total_price = Column(Float, default=0.0)
+    item_id = Column(Integer, ForeignKey("items.id"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    item = relationship("Item", back_populates="materials")
+EOF
+
+        # Create schemas
+        cat > app/schemas/user.py << 'EOF'
+from pydantic import BaseModel, EmailStr
+from typing import Optional
+from datetime import datetime
+
+class UserBase(BaseModel):
+    email: EmailStr
+    full_name: str
+
+class UserCreate(UserBase):
+    password: str
+
+class UserUpdate(BaseModel):
+    email: Optional[EmailStr] = None
+    full_name: Optional[str] = None
+    password: Optional[str] = None
+
+class UserInDB(UserBase):
+    id: int
+    is_active: bool
+    is_superuser: bool
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class UserResponse(UserInDB):
+    pass
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class TokenData(BaseModel):
+    email: Optional[str] = None
+EOF
+
+        cat > app/schemas/project.py << 'EOF'
+from pydantic import BaseModel
+from typing import Optional, List
+from datetime import datetime
+from .item import ItemResponse
+
+class ProjectBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    location: Optional[str] = None
+    total_area: Optional[float] = None
+
+class ProjectCreate(ProjectBase):
+    pass
+
+class ProjectUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    location: Optional[str] = None
+    total_area: Optional[float] = None
+    status: Optional[str] = None
+
+class ProjectInDB(ProjectBase):
+    id: int
+    total_cost: float
+    status: str
+    user_id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class ProjectResponse(ProjectInDB):
+    items: List[ItemResponse] = []
+
+class ProjectSummary(BaseModel):
+    total_projects: int
+    total_cost: float
+    active_projects: int
+EOF
+
+        # Create endpoints
+        cat > app/api/v1/endpoints/auth.py << 'EOF'
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from sqlalchemy.orm import Session
+from typing import Annotated
+from app.core.database import get_db
+from app.core.security import verify_password, create_access_token, get_password_hash
+from app.models.user import User
+from app.schemas.user import UserCreate, UserResponse, Token, TokenData
+from datetime import timedelta
+from app.core.config import settings
+
+router = APIRouter()
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+@router.post("/register", response_model=UserResponse)
+def register(user: UserCreate, db: Session = Depends(get_db)):
+    db_user = db.query(User).filter(User.email == user.email).first()
+    if db_user:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    hashed_password = get_password_hash(user.password)
+    db_user = User(
+        email=user.email,
+        hashed_password=hashed_password,
+        full_name=user.full_name
+    )
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+@router.post("/token", response_model=Token)
+def login_for_access_token(
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+    db: Session = Depends(get_db)
+):
+    user = db.query(User).filter(User.email == form_data.username).first()
+    if not user or not verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.email}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+EOF
+
+        cat > app/api/v1/endpoints/projects.py << 'EOF'
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from typing import List
+from app.core.database import get_db
+from app.models.project import Project
+from app.models.user import User
+from app.schemas.project import ProjectCreate, ProjectResponse, ProjectUpdate, ProjectSummary
+from app.core.security import oauth2_scheme
+from jose import JWTError, jwt
+from app.core.config import settings
+
+router = APIRouter()
+
+async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        email: str = payload.get("sub")
+        if email is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+    
+    user = db.query(User).filter(User.email == email).first()
+    if user is None:
+        raise credentials_exception
+    return user
+
+@router.get("/", response_model=List[ProjectResponse])
+def get_projects(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    projects = db.query(Project).filter(Project.user_id == current_user.id).offset(skip).limit(limit).all()
+    return projects
+
+@router.post("/", response_model=ProjectResponse)
+def create_project(
+    project: ProjectCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    db_project = Project(**project.dict(), user_id=current_user.id)
+    db.add(db_project)
+    db.commit()
+    db.refresh(db_project)
+    return db_project
+
+@router.get("/summary", response_model=ProjectSummary)
+def get_projects_summary(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    total_projects = db.query(Project).filter(Project.user_id == current_user.id).count()
+    active_projects = db.query(Project).filter(Project.user_id == current_user.id, Project.status == "active").count()
+    total_cost = db.query(Project).filter(Project.user_id == current_user.id).with_entities(func.sum(Project.total_cost)).scalar() or 0.0
+    
+    return ProjectSummary(
+        total_projects=total_projects,
+        total_cost=total_cost,
+        active_projects=active_projects
+    )
+EOF
+
+        # Create main API router
+        cat > app/api/v1/api.py << 'EOF'
+from fastapi import APIRouter
+from app.api.v1.endpoints import auth, projects, items, materials
+
+api_router = APIRouter()
+
+api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+api_router.include_router(projects.router, prefix="/projects", tags=["projects"])
+api_router.include_router(items.router, prefix="/items", tags=["items"])
+api_router.include_router(materials.router, prefix="/materials", tags=["materials"])
+EOF
+
+        # Create main.py
+        cat > main.py << 'EOF'
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from app.api.v1.api import api_router
+from app.core.config import settings
+from app.core.database import engine, Base
+
+# Create tables
+Base.metadata.create_all(bind=engine)
+
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    version=settings.VERSION,
+    description="API for Metreyar - Construction Estimation Tool"
+)
+
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.BACKEND_CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Include API routes
+app.include_router(api_router, prefix=settings.API_V1_STR)
+
+@app.get("/")
+def read_root():
+    return {"message": "Welcome to Metreyar API"}
+
+@app.get("/health")
+def health_check():
+    return {"status": "healthy"}
+EOF
+
+        # Create requirements.txt
+        cat > requirements.txt << 'EOF'
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+sqlalchemy==2.0.23
+psycopg2-binary==2.9.9
+python-dotenv==1.0.0
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+alembic==1.12.1
+pydantic-settings==2.1.0
+redis==5.0.1
+celery==5.3.4
+EOF
+
+        # Create Dockerfile
+        cat > Dockerfile << 'EOF'
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+EXPOSE 8000
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+EOF
+
+        # Create .env.example
+        cat > .env.example << 'EOF'
+DATABASE_URL=postgresql://user:password@localhost:5432/metreyar
+SECRET_KEY=your-secret-key-here-change-in-production
+REDIS_URL=redis://localhost:6379/0
+EOF
+
+        # Create README.md
+        cat > README.md << 'EOF'
+# Metreyar API
+
+Construction Estimation and Measurement API
+
+## Features
+
+- User authentication and authorization
+- Project management
+- Item and material management
+- Cost calculations
+- RESTful API architecture
+
+## Installation
+
+1. Clone the repository
+2. Install dependencies: `pip install -r requirements.txt`
+3. Set up environment variables: `cp .env.example .env`
+4. Run the application: `uvicorn main:app --reload`
+
+## API Documentation
+
+Visit `/docs` for interactive API documentation.
+EOF
+
+        echo "Project structure created successfully!"
+        
+    - name: Verify structure
+      run: |
+        find . -type f -name "*.py" | head -20
+        echo "Total Python files created:"
+        find . -type f -name "*.py" | wc -l
+
+  test-setup:
+    runs-on: ubuntu-latest
+    needs: create-project-structure
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      
+    - name: Test Python syntax
+      run: |
+        python -m py_compile main.py
+        python -m py_compile app/core/config.py
+        python -m py_compile app/core/database.py
+        echo "Python syntax check passed!"
+        
+    - name: List created files
+      run: |
+        tree -a || find . -type f | head -50

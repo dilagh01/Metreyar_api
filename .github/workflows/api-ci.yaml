@@ -28,9 +28,9 @@ jobs:
         touch app/schemas/__init__.py
         touch app/services/__init__.py
         touch app/tests/__init__.py
-        # Create core configuration files - FIXED SYNTAX
-        cat > app/core/config.py << 'EOF'
-from pydantic import BaseSettings  # ✅ درست شده
+# Create core configuration files - FIXED SYNTAX
+cat << 'EOF' > app/core/config.py
+from pydantic import BaseSettings
 from typing import List, Optional
 import os
 from dotenv import load_dotenv

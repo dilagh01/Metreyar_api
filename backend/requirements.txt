@@ -15,3 +15,4 @@ fastapi
 sqlalchemy
 pydantic
 python-multipart
+pydantic-settings==2.1.0

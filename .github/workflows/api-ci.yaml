@@ -37,9 +37,6 @@ jobs:
 from pydantic import BaseSettings
 from typing import List, Optional
 import os
-from dotenv import load_dotenv
-
-load_dotenv()
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Metreyar API"
@@ -62,6 +59,10 @@ class Settings(BaseSettings):
     
     class Config:
         case_sensitive = True
+
+# اینجا باید load_dotenv باشد، نه در بالای فایل
+from dotenv import load_dotenv
+load_dotenv()
 
 settings = Settings()
 EOF

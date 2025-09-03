@@ -32,9 +32,9 @@ jobs:
         touch app/services/__init__.py
         touch app/tests/__init__.py
         
-        # Create core configuration files
+        # Create core configuration files - FIXED SYNTAX
         cat > app/core/config.py << 'EOF'
-from pydantic_settings import BaseSettings
+from pydantic import BaseSettings
 from typing import List, Optional
 import os
 from dotenv import load_dotenv
@@ -242,11 +242,11 @@ class TokenData(BaseModel):
     email: Optional[str] = None
 EOF
 
+        # Create project schema
         cat > app/schemas/project.py << 'EOF'
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
-from .item import ItemResponse
 
 class ProjectBase(BaseModel):
     name: str
@@ -276,7 +276,7 @@ class ProjectInDB(ProjectBase):
         from_attributes = True
 
 class ProjectResponse(ProjectInDB):
-    items: List[ItemResponse] = []
+    pass
 
 class ProjectSummary(BaseModel):
     total_projects: int
@@ -284,7 +284,83 @@ class ProjectSummary(BaseModel):
     active_projects: int
 EOF
 
-        # Create endpoints
+        # Create item schema
+        cat > app/schemas/item.py << 'EOF'
+from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime
+
+class ItemBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    unit: str
+    quantity: float
+    unit_price: float
+    category: Optional[str] = None
+
+class ItemCreate(ItemBase):
+    project_id: int
+
+class ItemUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    unit: Optional[str] = None
+    quantity: Optional[float] = None
+    unit_price: Optional[float] = None
+    category: Optional[str] = None
+
+class ItemInDB(ItemBase):
+    id: int
+    total_price: float
+    project_id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class ItemResponse(ItemInDB):
+    pass
+EOF
+
+        # Create material schema
+        cat > app/schemas/material.py << 'EOF'
+from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime
+
+class MaterialBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    unit: str
+    quantity: float
+    unit_price: float
+
+class MaterialCreate(MaterialBase):
+    item_id: int
+
+class MaterialUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    unit: Optional[str] = None
+    quantity: Optional[float] = None
+    unit_price: Optional[float] = None
+
+class MaterialInDB(MaterialBase):
+    id: int
+    total_price: float
+    item_id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class MaterialResponse(MaterialInDB):
+    pass
+EOF
+
+        # Create endpoints - auth.py
         cat > app/api/v1/endpoints/auth.py << 'EOF'
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -293,7 +369,7 @@ from typing import Annotated
 from app.core.database import get_db
 from app.core.security import verify_password, create_access_token, get_password_hash
 from app.models.user import User
-from app.schemas.user import UserCreate, UserResponse, Token, TokenData
+from app.schemas.user import UserCreate, UserResponse, Token
 from datetime import timedelta
 from app.core.config import settings
 
@@ -337,6 +413,7 @@ def login_for_access_token(
     return {"access_token": access_token, "token_type": "bearer"}
 EOF
 
+        # Create endpoints - projects.py
         cat > app/api/v1/endpoints/projects.py << 'EOF'
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -397,15 +474,42 @@ def get_projects_summary(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    from sqlalchemy import func
+    
     total_projects = db.query(Project).filter(Project.user_id == current_user.id).count()
     active_projects = db.query(Project).filter(Project.user_id == current_user.id, Project.status == "active").count()
-    total_cost = db.query(Project).filter(Project.user_id == current_user.id).with_entities(func.sum(Project.total_cost)).scalar() or 0.0
+    total_cost = db.query(func.sum(Project.total_cost)).filter(Project.user_id == current_user.id).scalar() or 0.0
     
     return ProjectSummary(
         total_projects=total_projects,
         total_cost=total_cost,
         active_projects=active_projects
     )
+EOF
+
+        # Create placeholder endpoints
+        cat > app/api/v1/endpoints/items.py << 'EOF'
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from app.core.database import get_db
+
+router = APIRouter()
+
+@router.get("/")
+def get_items(db: Session = Depends(get_db)):
+    return {"message": "Items endpoint"}
+EOF
+
+        cat > app/api/v1/endpoints/materials.py << 'EOF'
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from app.core.database import get_db
+
+router = APIRouter()
+
+@router.get("/")
+def get_materials(db: Session = Depends(get_db)):
+    return {"message": "Materials endpoint"}
 EOF
 
         # Create main API router

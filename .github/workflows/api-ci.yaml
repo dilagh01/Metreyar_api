@@ -34,11 +34,15 @@ jobs:
         
         # Create core configuration files - FIXED SYNTAX
         cat > app/core/config.py << 'EOF'
-from pydantic import BaseSettings
+from pydantic import BaseSettings  # ✅ درست شده
 from typing import List, Optional
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class Settings(BaseSettings):
+    # بقیه کد بدون تغییر...
     PROJECT_NAME: str = "Metreyar API"
     VERSION: str = "1.0.0"
     API_V1_STR: str = "/api/v1"

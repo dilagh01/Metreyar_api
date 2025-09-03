@@ -1,11 +1,9 @@
 name: Create Project Structure
 
 on:
-  workflow_dispatch:
-  push:
+  workflow_dispatch:       # اجرای دستی از تب Actions
+  push:                    # اجرای خودکار روی هر push به main
     branches: [main]
-    paths:
-      - ".github/workflows/create-structure.yml"
 
 jobs:
   create-structure:
@@ -39,9 +37,9 @@ jobs:
             touch "$dir/__init__.py"
           done
 
-          echo "Directory structure created successfully"
+          echo "✅ Directory structure created successfully"
           echo ""
-          echo "Project structure:"
+          echo "📂 Project structure:"
           find backend -type d | sort
 
       - name: Verify structure

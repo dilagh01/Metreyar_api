@@ -1,7 +1,11 @@
-name: Auto Create Full Project Structure
+name: Create Complete Project Structure
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/api_ci.yaml'
 
 jobs:
   create-structure:
@@ -18,24 +22,27 @@ jobs:
       with:
         python-version: '3.11'
 
-    - name: Configure Git
+    - name: Install dependencies
       run: |
-        git config user.name "github-actions"
-        git config user.email "actions@github.com"
+        python -m pip install --upgrade pip
+        pip install fastapi uvicorn sqlalchemy aiosqlite pydantic pydantic-settings python-jose passlib python-dotenv
 
-    - name: Create branch for auto-structure
+    - name: Create backend directory structure
       run: |
-        git checkout -b auto-structure || git checkout auto-structure
-
-    - name: Create directory structure
-      run: |
+        echo "📁 Creating directory structure..."
         mkdir -p backend/app/{api/v1,models,schemas,database,core,services}
-        mkdir -p backend/tests data/migrations scripts docs
+        mkdir -p backend/tests
+        mkdir -p data/migrations
+        mkdir -p scripts
+        mkdir -p docs
+
         for dir in backend backend/app backend/app/api backend/app/api/v1 \
                  backend/app/models backend/app/schemas backend/app/database \
                  backend/app/core backend/app/services backend/tests; do
           touch "$dir/__init__.py"
         done
+
+        echo "✅ Directory structure created"
 
     - name: Create main.py
       run: |
@@ -47,10 +54,6 @@ app = FastAPI(title="Metreyar API", version="1.0.0")
 @app.get("/")
 def root():
     return {"message": "خوش آمدید به سرویس متره‌یار"}
-
-@app.get("/health")
-def health_check():
-    return {"status": "healthy"}
 EOL
 
     - name: Create database files
@@ -65,7 +68,14 @@ AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=F
 
 async def get_db():
     async with AsyncSessionLocal() as session:
-        yield session
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
 EOL
 
         cat > backend/app/database/base.py << 'EOL'
@@ -81,7 +91,7 @@ class BaseModel(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 EOL
 
-    - name: Create core config and security
+    - name: Create core config
       run: |
         cat > backend/app/core/config.py << 'EOL'
 from pydantic_settings import BaseSettings
@@ -90,99 +100,13 @@ from typing import List
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Metreyar API"
     VERSION: str = "1.0.0"
+    API_V1_STR: str = "/api/v1"
     DATABASE_URL: str = "sqlite+aiosqlite:///./metreyar.db"
+    SECRET_KEY: str = "your-secret-key"
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60*24*8
     BACKEND_CORS_ORIGINS: List[str] = ["*"]
     DEBUG: bool = True
 
 settings = Settings()
 EOL
-
-        cat > backend/app/core/security.py << 'EOL'
-from passlib.context import CryptContext
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
-EOL
-
-    - name: Create models
-      run: |
-        cat > backend/app/models/material.py << 'EOL'
-from sqlalchemy import Column, String, Float
-from app.database.base import BaseModel
-
-class Material(BaseModel):
-    __tablename__ = "materials"
-    name = Column(String(100), nullable=False)
-    unit = Column(String(20), nullable=False)
-    unit_price = Column(Float, nullable=False)
-EOL
-
-    - name: Create schemas
-      run: |
-        cat > backend/app/schemas/material.py << 'EOL'
-from pydantic import BaseModel
-
-class MaterialBase(BaseModel):
-    name: str
-    unit: str
-    unit_price: float
-
-class MaterialCreate(MaterialBase):
-    pass
-
-class MaterialRead(MaterialBase):
-    id: int
-EOL
-
-    - name: Create API routes
-      run: |
-        cat > backend/app/api/v1/materials.py << 'EOL'
-from fastapi import APIRouter
-
-router = APIRouter()
-
-@router.get("/materials")
-def get_materials():
-    return [{"name": "سیمان", "unit": "کیلوگرم", "unit_price": 5000}]
-EOL
-
-        cat > backend/app/api/v1/__init__.py << 'EOL'
-from fastapi import APIRouter
-from . import materials
-
-api_router = APIRouter()
-api_router.include_router(materials.router, prefix="/materials", tags=["materials"])
-EOL
-
-    - name: Create requirements.txt
-      run: |
-        cat > requirements.txt << 'EOL'
-fastapi
-uvicorn[standard]
-sqlalchemy
-aiosqlite
-pydantic
-pydantic-settings
-passlib[bcrypt]
-EOL
-
-    - name: Commit changes
-      run: |
-        git add .
-        git commit -m "Auto-create full project structure" || echo "No changes to commit"
-
-    - name: Push branch
-      run: |
-        git push origin auto-structure --force
-
-    - name: Create Pull Request
-      uses: peter-evans/create-pull-request@v5
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-        commit-message: "Auto-create project structure"
-        branch: auto-structure
-        base: main
-        title: "Auto-create full project structure"
-        body: "این PR شامل ساختار کامل پروژه، فایل‌های اصلی و نمونه API است."

@@ -3,13 +3,37 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List
 import os
+from datetime import datetime, timedelta
+from jose import JWTError, jwt
+from passlib.context import CryptContext
 
 from app.core.config import settings
-from app.core.database import get_db
+from app.core.database import get_db, engine, Base
 from app.models.user import User
 from app.models.project import Project
 from app.schemas.user import UserCreate, UserResponse
-from app.services.auth import get_password_hash, verify_password, create_access_token
+
+# ایجاد جداول دیتابیس
+Base.metadata.create_all(bind=engine)
+
+# Password hashing
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def verify_password(plain_password, hashed_password):
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password):
+    return pwd_context.hash(password)
+
+def create_access_token(data: dict, expires_delta: timedelta = None):
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    return encoded_jwt
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -26,6 +50,7 @@ app.add_middleware(
         "http://127.0.0.1:3000",
         "http://localhost:8080",      # Flutter web local
         "http://127.0.0.1:8080",      # Flutter web local
+        "https://metreyar.onrender.com",  # Your Render URL
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -37,7 +62,8 @@ def read_root():
     return {
         "message": "Metreyar API is running 🚀",
         "version": settings.VERSION,
-        "frontend": "https://dilagh01.github.io/metreyar_flutter_web/"
+        "frontend": "https://dilagh01.github.io/metreyar_flutter_web/",
+        "docs": "/docs"
     }
 
 @app.get("/health")

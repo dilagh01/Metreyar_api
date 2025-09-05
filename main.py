@@ -1,11 +1,15 @@
+import sys
+import os
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List
-import os
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+
+# اضافه کردن مسیر به sys.path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.core.config import settings
 from app.core.database import get_db, engine, Base
@@ -13,6 +17,7 @@ from app.models.user import User
 from app.models.project import Project
 from app.schemas.user import UserCreate, UserResponse
 
+# بقیه کد بدون تغییر...
 # ایجاد جداول دیتابیس
 Base.metadata.create_all(bind=engine)
 

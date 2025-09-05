@@ -1,5 +1,3 @@
-# ایجاد فایل main.py جدید در ریشه پروژه
-cat > main.py << 'EOL'
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel

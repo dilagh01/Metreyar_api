@@ -7,12 +7,15 @@ RUN apt-get update && apt-get install -y \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements.txt from backend directory
-COPY backend/requirements.txt .
+# Copy requirements.txt
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy entire backend directory
-COPY backend/ .
+# Copy main.py
+COPY main.py .
+
+# Copy app directory from backend
+COPY backend/app/ ./app/
 
 EXPOSE 8000
 

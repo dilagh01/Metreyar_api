@@ -15,7 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY main.py .
 
 # Copy app directory from backend
-COPY backend/app/ ./app/
+COPY app/ ./app/
 
 EXPOSE 8000
 

@@ -1,40 +1,44 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.core.config import settings
-from app.api.v1.endpoints import auth, projects, items, calculations, price_list
-from app.core.database import Base, engine
 
-# ایجاد جداول دیتابیس
-Base.metadata.create_all(bind=engine)
-
-app = FastAPI(
-    title=settings.PROJECT_NAME,
-    version=settings.VERSION,
-    openapi_url=f"{settings.API_V1_STR}/openapi.json"
-)
+app = FastAPI(title="Metreyar API", version="2.0.0")
 
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.BACKEND_CORS_ORIGINS,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# شامل کردن routerها
-app.include_router(auth.router, prefix=settings.API_V1_STR)
-app.include_router(projects.router, prefix=settings.API_V1_STR)
-app.include_router(price_list.router, prefix=settings.API_V1_STR)
-app.include_router(calculations.router, prefix=settings.API_V1_STR)
-
 @app.get("/")
 def root():
-    return {"message": "Metreyar API is running 🚀", "version": settings.VERSION}
+    return {"message": "Metreyar API is running 🚀", "status": "basic"}
 
 @app.get("/health")
 def health_check():
-    return {"status": "healthy", "database": "connected"}
+    return {"status": "healthy", "mode": "basic"}
+
+# فقط اگر dependencies نصب شده باشند، endpoints پیشرفته را اضافه کن
+try:
+    from app.core.config import settings
+    from app.api.v1.endpoints import auth, projects, items, calculations, price_list
+    from app.core.database import Base, engine
+    
+    # ایجاد جداول دیتابیس
+    Base.metadata.create_all(bind=engine)
+    
+    # شامل کردن routerها
+    app.include_router(auth.router, prefix=settings.API_V1_STR)
+    app.include_router(projects.router, prefix=settings.API_V1_STR)
+    app.include_router(price_list.router, prefix=settings.API_V1_STR)
+    app.include_router(calculations.router, prefix=settings.API_V1_STR)
+    
+    print("✓ Advanced features loaded")
+    
+except ImportError as e:
+    print(f"⚠ Basic mode: {e}")
 
 if __name__ == "__main__":
     import uvicorn

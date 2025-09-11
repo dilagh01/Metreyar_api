@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Dict, Any
+from typing import Dict, Any, List  # اضافه کردن List
 
 router = APIRouter()
 
@@ -51,3 +51,4 @@ def calculate_estimation(request: CalculationRequest):
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+

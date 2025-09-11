@@ -2,15 +2,16 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# نصب dependencies سیستم
+# نصب dependencies سیستم برای cryptography
 RUN apt-get update && apt-get install -y \
     gcc \
+    libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # کپی requirements
 COPY requirements.txt .
 
-# نصب dependencies پایتون
+# نصب pip و dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 

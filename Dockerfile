@@ -1,24 +1,24 @@
-FROM python:3.11-slim
+kFROM python:3.11-slim
 
 WORKDIR /app
 
-# نصب dependencies سیستم برای cryptography
-RUN apt-get update && apt-get install -y \
-    gcc \
-    libssl-dev \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y gcc && rm -rf /var/lib/apt/lists/*
 
-# کپی requirements
-COPY requirements.txt .
-
-# نصب pip و dependencies
+# نصب تکی dependencies بدون استفاده از requirements.txt
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir \
+    fastapi==0.104.1 \
+    uvicorn[standard]==0.24.0 \
+    sqlalchemy==2.0.23 \
+    python-dotenv==1.0.0 \
+    pydantic-settings==2.1.0 \
+    pydantic==2.5.0 \
+    email-validator==2.0.0 \
+    passlib[bcrypt]==1.7.4 \
+    python-jose[cryptography]==3.3.0
 
-# کپی کدهای برنامه
 COPY . .
 
-# ایجاد دیتابیس SQLite
 RUN python -c "from app.core.database import Base, engine; Base.metadata.create_all(bind=engine)"
 
 EXPOSE 8000

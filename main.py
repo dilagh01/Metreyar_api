@@ -6,7 +6,7 @@ app = FastAPI(title="Metreyar API", version="2.0.0")
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://dilagh01.github.io"],
+    allow_origins=["https://dilagh01.github.io""https://dilagh01.github.io/metreyar_flutter_web""https://localhost:5000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

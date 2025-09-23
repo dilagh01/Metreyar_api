@@ -1,7 +1,7 @@
-# main.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from typing import List, Dict
 import pandas as pd
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib import colors
@@ -14,7 +14,11 @@ app = FastAPI()
 # فعال کردن CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://github.com/dilagh01/metreyar_flutter_web"],  
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:8000",
+        "https://dilagh01.github.io",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -32,7 +36,7 @@ async def get_data():
     return DATA
 
 @app.post("/data/")
-async def update_data(new_data: list[dict]):
+async def update_data(new_data: List[Dict]):
     """دریافت داده‌های ویرایش‌شده و ذخیره"""
     global DATA
     DATA = new_data

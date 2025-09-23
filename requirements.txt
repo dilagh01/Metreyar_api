@@ -1,3 +1,4 @@
+# Core
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 sqlalchemy==2.0.23
@@ -8,9 +9,13 @@ email-validator==2.0.0
 passlib[bcrypt]==1.7.4
 python-jose[cryptography]==3.3.0
 
-# Excel
+# Data & Excel
 pandas==2.3.2
 openpyxl==3.1.5
 
 # PDF
 reportlab==4.4.4
+
+
+
+

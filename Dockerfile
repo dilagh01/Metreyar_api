@@ -1,26 +1,31 @@
+# استفاده از ایمیج رسمی Python
 FROM python:3.11-slim
 
+# تنظیمات محیطی
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# نصب وابستگی‌های سیستمی (برای pandas و reportlab)
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libpq-dev \
+    libjpeg-dev \
+    zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# تنظیم دایرکتوری کاری
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y gcc && rm -rf /var/lib/apt/lists/*
+# کپی requirements و نصب پکیج‌ها
+COPY requirements.txt .
+RUN pip install --upgrade pip
+RUN pip install --no-cache-dir -r requirements.txt
 
-# نصب تکی dependencies بدون استفاده از requirements.txt
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir \
-    fastapi==0.104.1 \
-    uvicorn[standard]==0.24.0 \
-    sqlalchemy==2.0.23 \
-    python-dotenv==1.0.0 \
-    pydantic-settings==2.1.0 \
-    pydantic==2.5.0 \
-    email-validator==2.0.0 \
-    passlib[bcrypt]==1.7.4 \
-    python-jose[cryptography]==3.3.0
-
+# کپی کل سورس کد
 COPY . .
 
-RUN python -c "from app.core.database import Base, engine; Base.metadata.create_all(bind=engine)"
-
+# پورت مورد استفاده
 EXPOSE 8000
 
+# اجرای FastAPI با uvicorn
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

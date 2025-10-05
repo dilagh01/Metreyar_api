@@ -1,8 +1,8 @@
 import sys
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), 'api')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), 'app')))
 
-from v1.endpoints.main import app
+from api.v1.endpoints.main import app  # تغییر از 'v1' به 'api.v1.endpoints'
 import uvicorn
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@ from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import JSONResponse
 import pandas as pd
 import io
+from datetime import datetime
 
 app = FastAPI(root_path="/api/v1")
 
@@ -26,3 +27,15 @@ async def upload_excel(file: UploadFile = File(...)):
             content={"error": f"❌ خطا: {str(e)}"},
             status_code=400
         )
+
+@app.get("/health")
+async def health_check():
+    """بررسی وضعیت سرور"""
+    current_time = datetime.now().strftime("%I:%M %p +04 on %d %b %Y")
+    pandas_version = pd.__version__  # تست فعال بودن پانداس
+    return {
+        "status": "healthy",
+        "message": f"Server is running at {current_time}",
+        "pandas_version": pandas_version,
+        "data_count": 0
+    }

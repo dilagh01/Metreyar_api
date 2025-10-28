@@ -1,0 +1,34 @@
+@app.post("/api/v1/inspect-excel/")
+async def inspect_excel(file: UploadFile = File(...)):
+    """
+    بررسی فایل اکسل و نمایش ساختار آن (برای تست قبل از مقایسه)
+    """
+    try:
+        # بررسی نوع فایل
+        if not file.filename.endswith(('.xlsx', '.xls')):
+            raise HTTPException(status_code=400, detail="فایل باید از نوع Excel باشد")
+
+        # خواندن محتوای فایل
+        contents = await file.read()
+        df = pd.read_excel(io.BytesIO(contents))
+
+        if df.empty:
+            raise HTTPException(status_code=400, detail="فایل خالی است")
+
+        # آماده‌سازی اطلاعات
+        columns = df.columns.tolist()
+        sample_data = df.head(5).to_dict(orient="records")
+
+        return JSONResponse(
+            content={
+                "message": "✅ فایل با موفقیت خوانده شد",
+                "filename": file.filename,
+                "columns": columns,
+                "records_count": len(df),
+                "sample_data": sample_data
+            },
+            status_code=200
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"خطا در پردازش فایل: {str(e)}")

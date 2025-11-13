@@ -59,10 +59,10 @@ def detect_columns(df: pd.DataFrame):
 
 # 📘 خواندن فایل اکسل
 def load_excel(file: UploadFile) -> pd.DataFrame:
-    """خواندن فایل اکسل با اعتبارسنجی"""
+    """خواندن فایل اکسل و شناسایی خودکار سطر هدر"""
     if not file.filename.lower().endswith(('.xlsx', '.xls', '.csv')):
         raise HTTPException(status_code=400, detail=f"فرمت فایل {file.filename} پشتیبانی نمی‌شود.")
-
+    
     contents = file.file.read()
     if len(contents) == 0:
         raise HTTPException(status_code=400, detail=f"فایل {file.filename} خالی است.")
@@ -70,13 +70,31 @@ def load_excel(file: UploadFile) -> pd.DataFrame:
         raise HTTPException(status_code=400, detail="حجم فایل بیش از ۱۰ مگابایت است.")
 
     try:
-        df = pd.read_excel(io.BytesIO(contents))
-        if df.empty:
-            raise HTTPException(status_code=400, detail=f"فایل {file.filename} داده‌ای ندارد.")
+        excel_data = pd.ExcelFile(io.BytesIO(contents))
+        df = None
+
+        # پیمایش شیت‌ها و یافتن سطر هدر واقعی
+        for sheet_name in excel_data.sheet_names:
+            temp_df = pd.read_excel(excel_data, sheet_name=sheet_name, header=None)
+            header_row = None
+
+            for i in range(min(15, len(temp_df))):  # بررسی ۱۵ سطر اول
+                row_values = [str(cell).strip() for cell in temp_df.iloc[i].values]
+                if any(x in row_values for x in ["شرح کار", "شرح عملیات", "Description", "Item", "کار", "شرح"]):
+                    header_row = i
+                    break
+
+            if header_row is not None:
+                df = pd.read_excel(excel_data, sheet_name=sheet_name, header=header_row)
+                break
+
+        if df is None or df.empty:
+            raise HTTPException(status_code=400, detail="هدر یا داده معتبر در فایل یافت نشد.")
+        
         return df
+
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"خطا در خواندن فایل {file.filename}: {str(e)}")
-
 
 # 🔍 مقایسه دو فایل صورت وضعیت
 @app.post("/api/v1/compare-sooratvaziat/")

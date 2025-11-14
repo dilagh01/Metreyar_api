@@ -6,15 +6,14 @@ import io
 from datetime import datetime
 import uvicorn
 import os
-from difflib import get_close_matches
 
 app = FastAPI(
     title="Metreyar API - مقایسه صورت وضعیت",
-    version="2.2.0",
-    description="مقایسه دو فایل صورت وضعیت عمرانی با تشخیص فازی ستون‌ها"
+    version="3.0.0",
+    description="مقایسه دو صورت وضعیت عمرانی با تشخیص هوشمند هدر + ستون‌ها"
 )
 
-# فعال‌سازی CORS برای فرانت
+# فعال‌سازی CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -23,41 +22,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 🧠 تشخیص فازی ستون‌ها
-def detect_columns(df: pd.DataFrame):
-    """تشخیص هوشمند و فازی ستون‌های اصلی در فایل صورت وضعیت"""
-    df.columns = df.columns.astype(str).str.strip()
-    names = list(df.columns)
 
-    possible = {
-        'description': ['شرح کار', 'شرح', 'شرح عملیات', 'شرح فعالیت', 'توضیحات', 'نام آیتم', 'Item', 'Description', 'Work', 'Activity'],
-        'total': ['مبلغ', 'مبلغ کل', 'جمع', 'جمع کل', 'Amount', 'Total', 'Sum', 'قیمت کل', 'قیمت کل (ریال)'],
-        'qty': ['مقدار', 'تعداد', 'Qty', 'Quantity', 'حجم', 'مقدار کار', 'مقدار اجرا'],
-        'unit_price': ['فی', 'فی واحد', 'Rate', 'Unit Price', 'قیمت واحد']
-    }
-
-    found = {}
-    for key, keywords in possible.items():
-        candidates = []
-        for kw in keywords:
-            candidates += get_close_matches(kw, names, n=1, cutoff=0.5)
-        found[key] = candidates[0] if candidates else None
-
-    if not found['description']:
-        raise HTTPException(
-            status_code=400,
-            detail=f"ستون 'شرح کار' یا مشابه آن یافت نشد. ستون‌های موجود: {names}"
-        )
-    if not found['total']:
-        raise HTTPException(
-            status_code=400,
-            detail=f"ستون 'مبلغ' یا مشابه آن یافت نشد. ستون‌های موجود: {names}"
-        )
-
-    return found
-
-
-# 📘 خواندن فایل اکسل
+# --------------------------------------------------------------------
+# 1) تابع هوشمند بارگذاری فایل + تشخیص اتوماتیک هدر داخل اولین 15 ردیف
+# --------------------------------------------------------------------
 def load_excel(file: UploadFile) -> pd.DataFrame:
     """خواندن فایل اکسل و شناسایی خودکار سطر هدر"""
     if not file.filename.lower().endswith(('.xlsx', '.xls', '.csv')):
@@ -73,95 +41,126 @@ def load_excel(file: UploadFile) -> pd.DataFrame:
         excel_data = pd.ExcelFile(io.BytesIO(contents))
         df = None
 
-        # پیمایش شیت‌ها و یافتن سطر هدر واقعی
+        # بررسی همه شیت‌ها
         for sheet_name in excel_data.sheet_names:
             temp_df = pd.read_excel(excel_data, sheet_name=sheet_name, header=None)
             header_row = None
 
-            for i in range(min(15, len(temp_df))):  # بررسی ۱۵ سطر اول
-                row_values = [str(cell).strip() for cell in temp_df.iloc[i].values]
-                if any(x in row_values for x in ["شرح کار", "شرح عملیات", "Description", "Item", "کار", "شرح"]):
+            # جستجو در 15 ردیف اول
+            for i in range(min(15, len(temp_df))):
+                row_vals = [str(cell).strip() for cell in temp_df.iloc[i].values]
+
+                # اگر ردیف شامل نام ستون‌ها بود → تشخیص هدر
+                if any(word in row_vals for word in [
+                    "شرح", "شرح کار", "شرح عملیات",
+                    "Description", "Item", "کار"
+                ]):
                     header_row = i
                     break
 
+            # اگر هدر پیدا شد → همان شیت را بارگذاری کن
             if header_row is not None:
                 df = pd.read_excel(excel_data, sheet_name=sheet_name, header=header_row)
                 break
 
         if df is None or df.empty:
-            raise HTTPException(status_code=400, detail="هدر یا داده معتبر در فایل یافت نشد.")
-        
+            raise HTTPException(status_code=400, detail="❌ هدر معتبر یا داده‌ای در فایل یافت نشد.")
+
+        df.columns = df.columns.astype(str).str.strip()
         return df
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"خطا در خواندن فایل {file.filename}: {str(e)}")
 
-# 🔍 مقایسه دو فایل صورت وضعیت
+
+# --------------------------------------------------------------------
+# 2) تشخیص هوشمند ستون‌ها از روی نام‌های احتمالی
+# --------------------------------------------------------------------
+def detect_columns(df: pd.DataFrame):
+    df.columns = df.columns.str.strip()
+
+    possible = {
+        'description': ['شرح', 'شرح کار', 'شرح عملیات', 'Item', 'Description', 'Operation'],
+        'total': ['مبلغ', 'مبلغ کل', 'جمع', 'Amount', 'Total', 'قیمت کل']
+    }
+
+    found = {}
+
+    for key, names in possible.items():
+        found[key] = next(
+            (col for col in df.columns if any(n in col for n in names)),
+            None
+        )
+
+    if not found['description']:
+        raise HTTPException(
+            status_code=400,
+            detail=f"❌ ستون 'شرح کار' یا مشابه آن یافت نشد. ستون‌های موجود: {list(df.columns)}"
+        )
+    if not found['total']:
+        raise HTTPException(
+            status_code=400,
+            detail=f"❌ ستون 'مبلغ' یا مشابه آن یافت نشد. ستون‌های موجود: {list(df.columns)}"
+        )
+
+    return found
+
+
+# --------------------------------------------------------------------
+# 3) API مقایسه دو صورت وضعیت
+# --------------------------------------------------------------------
 @app.post("/api/v1/compare-sooratvaziat/")
 async def compare_soorat_vaziat(
-    previous_file: UploadFile = File(..., description="فایل صورت وضعیت دوره قبلی"),
-    current_file: UploadFile = File(..., description="فایل صورت وضعیت دوره جدید")
+    previous_file: UploadFile = File(...),
+    current_file: UploadFile = File(...)
 ):
     try:
+        # Load files
         df_prev = load_excel(previous_file)
         df_curr = load_excel(current_file)
 
+        # Detect columns
         prev_cols = detect_columns(df_prev)
         curr_cols = detect_columns(df_curr)
 
+        # Convert amounts
         df_prev[prev_cols['total']] = pd.to_numeric(df_prev[prev_cols['total']], errors='coerce').fillna(0)
         df_curr[curr_cols['total']] = pd.to_numeric(df_curr[curr_cols['total']], errors='coerce').fillna(0)
 
         total_prev = df_prev[prev_cols['total']].sum()
         total_curr = df_curr[curr_cols['total']].sum()
         total_diff = total_curr - total_prev
-        progress_percent = round((total_diff / total_prev * 100), 2) if total_prev > 0 else 0
 
+        # Merge by description
         merged = pd.merge(
             df_prev[[prev_cols['description'], prev_cols['total']]],
             df_curr[[curr_cols['description'], curr_cols['total']]],
             how="outer",
             left_on=prev_cols['description'],
-            right_on=curr_cols['description'],
+            right_on[curr_cols['description']],
             suffixes=("_prev", "_curr")
         ).fillna(0)
 
-        prev_amount_col = f"{prev_cols['total']}_prev"
-        curr_amount_col = f"{curr_cols['total']}_curr"
+        merged["تفاوت"] = merged[f"{curr_cols['total']}_curr"] - merged[f"{prev_cols['total']}_prev"]
+        merged["وضعیت"] = merged["تفاوت"].apply(
+            lambda x: "افزایش" if x > 0 else ("کاهش" if x < 0 else "بدون تغییر")
+        )
 
-        if prev_amount_col not in merged.columns:
-            prev_amount_col = prev_cols['total']
-        if curr_amount_col not in merged.columns:
-            curr_amount_col = curr_cols['total']
+        # Final formatting
+        merged = merged.rename(columns={
+            prev_cols['description']: "شرح کار",
+            f"{prev_cols['total']}_prev": "مبلغ قبلی",
+            f"{curr_cols['total']}_curr": "مبلغ جدید",
+        })
 
-        merged['تفاوت'] = merged[curr_amount_col] - merged[prev_amount_col]
-        merged['وضعیت'] = merged['تفاوت'].apply(lambda x: "افزایش" if x > 0 else ("کاهش" if x < 0 else "بدون تغییر"))
-
-        for col in [prev_amount_col, curr_amount_col, 'تفاوت']:
-            merged[col] = merged[col].round(2)
-
-        display_columns = [prev_cols['description'], prev_amount_col, curr_amount_col, 'تفاوت', 'وضعیت']
-        if prev_cols['description'] != curr_cols['description']:
-            display_columns.insert(1, curr_cols['description'])
-
-        rename_map = {
-            prev_amount_col: 'مبلغ قبلی',
-            curr_amount_col: 'مبلغ جدید',
-            prev_cols['description']: 'شرح کار',
-        }
-        if prev_cols['description'] != curr_cols['description']:
-            rename_map[curr_cols['description']] = 'شرح کار (جدید)'
-
-        result_df = merged[display_columns].rename(columns=rename_map)
-        data = result_df.to_dict(orient='records')
+        data = merged.to_dict(orient="records")
 
         return JSONResponse(
             content={
-                "message": "✅ مقایسه صورت وضعیت با موفقیت انجام شد",
-                "total_previous": round(float(total_prev), 2),
-                "total_current": round(float(total_curr), 2),
-                "total_difference": round(float(total_diff), 2),
-                "progress_percent": progress_percent,
+                "message": "مقایسه صورت وضعیت با موفقیت انجام شد",
+                "total_previous": float(total_prev),
+                "total_current": float(total_curr),
+                "total_difference": float(total_diff),
                 "items_compared": len(merged),
                 "data": data
             }
@@ -173,29 +172,34 @@ async def compare_soorat_vaziat(
         raise HTTPException(status_code=500, detail=f"خطای سرور: {str(e)}")
 
 
-# 💚 بررسی سلامت API
+# --------------------------------------------------------------------
+# 4) Health check
+# --------------------------------------------------------------------
 @app.get("/api/v1/health")
 async def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "version": "2.2.0"
+        "version": "3.0.0"
     }
 
 
+# --------------------------------------------------------------------
+# 5) Root
+# --------------------------------------------------------------------
 @app.get("/")
 async def root():
     return {
-        "message": "Metreyar API - مقایسه صورت وضعیت",
+        "message": "Metreyar API - مقایسه پیشرفته صورت وضعیت",
         "docs": "/docs",
-        "endpoints": {
-            "health": "/api/v1/health",
-            "compare": "/api/v1/compare-sooratvaziat/"
-        }
+        "compare_endpoint": "/api/v1/compare-sooratvaziat/"
     }
 
 
+# --------------------------------------------------------------------
+# 6) Run
+# --------------------------------------------------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
-    print(f"✅ سرور در پورت {port} اجرا شد")
-    uvicorn.run("app.api.v1.endpoints.main:app", host="0.0.0.0", port=port, reload=True)
+    print("🚀 Server Started on port", port)
+    uvicorn.run(app, host="0.0.0.0", port=port)

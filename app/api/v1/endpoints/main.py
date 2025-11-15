@@ -6,6 +6,7 @@ import io
 from datetime import datetime
 import uvicorn
 import os
+import traceback
 
 app = FastAPI(
     title="Metreyar API - مقایسه صورت وضعیت",
@@ -44,7 +45,7 @@ def load_excel(file: UploadFile) -> pd.DataFrame:
 
             header_row = None
 
-            for i in range(min(15, len(tmp))):
+            for i in range(min(50, len(tmp))):
                 row = [str(c).strip() for c in tmp.iloc[i].values]
 
                 if any(x in row for x in ["شرح", "شرح کار", "شرح عملیات", "Description", "Item"]):
@@ -141,9 +142,10 @@ async def compare_soorat_vaziat(
             "data": data
         })
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"خطای سرور: {str(e)}")
 
+except Exception as e:
+    print("🔥 ERROR:", traceback.format_exc())
+    raise HTTPException(status_code=500, detail=f"خطای سرور: {str(e)}")
 
 # ─────────────────────────────────────────────────────────────
 # health

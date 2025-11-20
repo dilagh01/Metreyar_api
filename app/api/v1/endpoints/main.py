@@ -1,22 +1,20 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 import io
 from datetime import datetime
 import uvicorn
 import os
-from difflib import get_close_matches
 import traceback
 
 app = FastAPI(
     title="Metreyar API - مقایسه صورت وضعیت",
-    version="3.3.0",
-    description="مقایسه دو فایل صورت وضعیت عمرانی با تشخیص فازی ستون‌ها (نسخه پایدار Render)"
+    version="3.4.0",
+    description="مقایسه دو فایل صورت وضعیت عمرانی با تشخیص فازی ستون‌ها"
 )
 
 # -------------------------
-# فعال سازی CORS
+# فعال‌سازی CORS
 # -------------------------
 app.add_middleware(
     CORSMiddleware,
@@ -27,7 +25,7 @@ app.add_middleware(
 )
 
 # -------------------------
-# تشخیص فازی ستون‌ها
+# نرمال‌سازی نام ستون
 # -------------------------
 def normalize(col):
     return (
@@ -40,57 +38,56 @@ def normalize(col):
     )
 
 
+# -------------------------
+# تشخیص فازی ستون‌ها
+# -------------------------
 def detect_columns(df):
     normalized = {normalize(c): c for c in df.columns}
 
-    # نگاشت نهایی که می‌خواهیم پیدا کنیم
     mapping = {
-        "شرحکار": None,
-        "مبلغقبلی": None,
-        "مبلغجدید": None
+        "description": None,        # شرح کار
+        "previous_total": None,     # مبلغ قبلی
+        "current_total": None,      # مبلغ جدید
+        "total": None               # ستونی که عملیات اصلی روی آن انجام می‌شود
     }
 
     for norm_key, original_name in normalized.items():
 
-        # تشخیص شرح کار
+        # ستون شرح کار
         if any(x in norm_key for x in ["شرح", "کار"]):
-            if mapping["شرحکار"] is None:
-                mapping["شرحکار"] = original_name
+            if mapping["description"] is None:
+                mapping["description"] = original_name
 
-        # تشخیص مبلغ قبلی
+        # مبلغ قبلی
         if any(x in norm_key for x in ["قبلی", "قبل", "پیش"]):
-            if mapping["مبلغقبلی"] is None:
-                mapping["مبلغقبلی"] = original_name
+            if mapping["previous_total"] is None:
+                mapping["previous_total"] = original_name
 
-        # تشخیص مبلغ جدید
+        # مبلغ جدید
         if any(x in norm_key for x in ["جدید", "نو", "current"]):
-            if mapping["مبلغجدید"] is None:
-                mapping["مبلغجدید"] = original_name
+            if mapping["current_total"] is None:
+                mapping["current_total"] = original_name
 
-    # ------------------------------------
-    #   کنترل وجود ستون شرح کار
-    # ------------------------------------
-    if not mapping["شرحکار"]:
+    # ستون شرح کار حتماً باید باشد
+    if not mapping["description"]:
         raise HTTPException(
             status_code=400,
             detail=f"ستون شرح کار پیدا نشد. ستون‌های موجود: {list(df.columns)}"
         )
 
-    # ------------------------------------
-    # اگر ستون مبلغ قبلی یا جدید نبود:
-    # یکی از این ۲ حالت را انجام بده:
-    # ۱) ستونی با مقدار 0 اضافه کنیم (خطا ندهیم)
-    # ------------------------------------
+    # اگر ستون مبلغ قبلی نبود، خودمان صفر می‌سازیم
+    if mapping["previous_total"] is None:
+        df["__previous__"] = 0
+        mapping["previous_total"] = "__previous__"
 
-    if mapping["مبلغقبلی"] is None:
-        df["__مبلغقبلی__"] = 0
-        mapping["مبلغقبلی"] = "__مبلغقبلی__"
-
-    if mapping["مبلغجدید"] is None:
-        df["__مبلغجدید__"] = 0
-        mapping["مبلغجدید"] = "__مبلغجدید__"
+    # اگر ستون مبلغ جدید نبود، خودمان صفر می‌سازیم
+    if mapping["current_total"] is None:
+        df["__current__"] = 0
+        mapping["current_total"] = "__current__"
 
     return mapping
+
+
 # -------------------------
 # خواندن فایل اکسل
 # -------------------------
@@ -103,20 +100,21 @@ def load_excel(file: UploadFile):
     if len(contents) == 0:
         raise HTTPException(status_code=400, detail=f"فایل {file.filename} خالی است.")
 
-    if len(contents) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="حجم فایل بیش از ۱۰ مگابایت است.")
+    if len(contents) > 15 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="حجم فایل بیش از ۱۵ مگابایت است.")
 
     try:
         df = pd.read_excel(io.BytesIO(contents))
         if df.empty:
             raise HTTPException(status_code=400, detail=f"فایل {file.filename} داده‌ای ندارد.")
         return df
+
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"خطا در خواندن فایل {file.filename}: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"خطا در خواندن {file.filename}: {str(e)}")
 
 
 # -------------------------
-# مقایسه دو فایل صورت وضعیت
+# API اصلی – مقایسه دو فایل
 # -------------------------
 @app.post("/api/v1/compare-sooratvaziat/")
 async def compare_soorat_vaziat(
@@ -130,17 +128,21 @@ async def compare_soorat_vaziat(
         prev_cols = detect_columns(df_prev)
         curr_cols = detect_columns(df_curr)
 
-        # تبدیل مبلغ‌ها به عدد
+        # تنظیم ستون total برای هر فایل
+        prev_cols["total"] = prev_cols["previous_total"]
+        curr_cols["total"] = curr_cols["current_total"]
+
+        # تبدیل مبالغ به عدد
         df_prev[prev_cols['total']] = pd.to_numeric(df_prev[prev_cols['total']], errors='coerce').fillna(0)
         df_curr[curr_cols['total']] = pd.to_numeric(df_curr[curr_cols['total']], errors='coerce').fillna(0)
 
-        # محاسبه مجموع‌ها
+        # مجموع‌ها
         total_prev = df_prev[prev_cols['total']].sum()
         total_curr = df_curr[curr_cols['total']].sum()
         diff = total_curr - total_prev
         percent = round((diff / total_prev * 100), 2) if total_prev > 0 else 0
 
-        # ادغام سطرها
+        # ادغام داده‌ها
         merged = pd.merge(
             df_prev[[prev_cols['description'], prev_cols['total']]],
             df_curr[[curr_cols['description'], curr_cols['total']]],
@@ -151,7 +153,9 @@ async def compare_soorat_vaziat(
         ).fillna(0)
 
         merged['تفاوت'] = merged[f"{curr_cols['total']}_curr"] - merged[f"{prev_cols['total']}_prev"]
-        merged['وضعیت'] = merged['تفاوت'].apply(lambda x: "افزایش" if x > 0 else ("کاهش" if x < 0 else "بدون تغییر"))
+        merged['وضعیت'] = merged['تفاوت'].apply(
+            lambda x: "افزایش" if x > 0 else ("کاهش" if x < 0 else "بدون تغییر")
+        )
 
         merged = merged.rename(columns={
             prev_cols['description']: "شرح کار",
@@ -180,30 +184,27 @@ async def compare_soorat_vaziat(
 
 
 # -------------------------
-# مسیر سلامت API
+# Health Check
 # -------------------------
 @app.get("/api/v1/health")
 async def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "version": "3.3.0"
+        "version": "3.4.0"
     }
 
+
 # -------------------------
-# home
+# Root
 # -------------------------
 @app.get("/")
 async def root():
-    return {
-        "message": "Metreyar API Service",
-        "status": "running",
-        "compare": "/api/v1/compare-sooratvaziat/"
-    }
+    return {"message": "Metreyar API Service", "compare": "/api/v1/compare-sooratvaziat/"}
 
 
 # -------------------------
-# اجرای Uvicorn (نسخه سازگار با Render)
+# اجرای Uvicorn در Render
 # -------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))

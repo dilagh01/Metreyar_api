@@ -29,37 +29,68 @@ app.add_middleware(
 # -------------------------
 # تشخیص فازی ستون‌ها
 # -------------------------
-def detect_columns(df: pd.DataFrame):
-    df.columns = df.columns.astype(str).str.strip()
-    names = list(df.columns)
+def normalize(col):
+    return (
+        str(col)
+        .replace(" ", "")
+        .replace("‌", "")   # نیم‌فاصله
+        .replace("-", "")
+        .replace("_", "")
+        .strip()
+    )
 
-    possible = {
-        'description': ['شرح کار', 'شرح', 'شرح عملیات', 'شرح فعالیت', 'توضیحات', 'نام آیتم', 'Item', 'Description'],
-        'total': ['مبلغ', 'مبلغ کل', 'جمع', 'Amount', 'Total', 'Sum'],
+
+def detect_columns(df):
+    normalized = {normalize(c): c for c in df.columns}
+
+    # نگاشت نهایی که می‌خواهیم پیدا کنیم
+    mapping = {
+        "شرحکار": None,
+        "مبلغقبلی": None,
+        "مبلغجدید": None
     }
 
-    found = {}
+    for norm_key, original_name in normalized.items():
 
-    for key, keywords in possible.items():
-        matched = []
-        for kw in keywords:
-            matched += get_close_matches(kw, names, n=1, cutoff=0.5)
-        found[key] = matched[0] if matched else None
+        # تشخیص شرح کار
+        if any(x in norm_key for x in ["شرح", "کار"]):
+            if mapping["شرحکار"] is None:
+                mapping["شرحکار"] = original_name
 
-    if not found['description']:
+        # تشخیص مبلغ قبلی
+        if any(x in norm_key for x in ["قبلی", "قبل", "پیش"]):
+            if mapping["مبلغقبلی"] is None:
+                mapping["مبلغقبلی"] = original_name
+
+        # تشخیص مبلغ جدید
+        if any(x in norm_key for x in ["جدید", "نو", "current"]):
+            if mapping["مبلغجدید"] is None:
+                mapping["مبلغجدید"] = original_name
+
+    # ------------------------------------
+    #   کنترل وجود ستون شرح کار
+    # ------------------------------------
+    if not mapping["شرحکار"]:
         raise HTTPException(
             status_code=400,
-            detail=f"ستون 'شرح کار' یافت نشد. ستون‌ها: {names}"
+            detail=f"ستون شرح کار پیدا نشد. ستون‌های موجود: {list(df.columns)}"
         )
 
-    if not found['total']:
-        raise HTTPException(
-            status_code=400,
-            detail=f"ستون 'مبلغ' یافت نشد. ستون‌ها: {names}"
-        )
+    # ------------------------------------
+    # اگر ستون مبلغ قبلی یا جدید نبود:
+    # یکی از این ۲ حالت را انجام بده:
+    # ۱) ستونی با مقدار 0 اضافه کنیم (خطا ندهیم)
+    # ------------------------------------
 
-    return found
+    if mapping["مبلغقبلی"] is None:
+        df["__مبلغقبلی__"] = 0
+        mapping["مبلغقبلی"] = "__مبلغقبلی__"
 
+    if mapping["مبلغجدید"] is None:
+        df["__مبلغجدید__"] = 0
+        mapping["مبلغجدید"] = "__مبلغجدید__"
+
+    return mapping
 # -------------------------
 # خواندن فایل اکسل
 # -------------------------

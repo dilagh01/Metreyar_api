@@ -1,21 +1,23 @@
+# main.py
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 import pandas as pd
 import io
-from datetime import datetime
-import uvicorn
 import os
 import traceback
+from datetime import datetime
+import uvicorn
+import re
+from difflib import get_close_matches
 
 app = FastAPI(
-    title="Metreyar API - مقایسه صورت وضعیت",
-    version="3.4.0",
-    description="مقایسه دو فایل صورت وضعیت عمرانی با تشخیص فازی ستون‌ها"
+    title="Metreyar API - مقایسه صورت وضعیت (هوشمند)",
+    version="1.0.0",
+    description="مقایسه دو فایل صورت وضعیت عمرانی — تشخیص فازی ستون‌ها، محاسبه اتوماتیک مبلغ"
 )
 
-# -------------------------
-# فعال‌سازی CORS
-# -------------------------
+# CORS (برای فرانت)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,148 +26,244 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# -------------------------
-# نرمال‌سازی نام ستون
-# -------------------------
-def normalize(col):
-    return (
-        str(col)
-        .replace(" ", "")
-        .replace("‌", "")   # نیم‌فاصله
-        .replace("-", "")
-        .replace("_", "")
-        .strip()
-    )
+# ---------- تنظیمات ----------
+MAX_FILE_BYTES = 30 * 1024 * 1024  # 30 MB
+# --------------------------------
 
+def _normalize_col_name(col: str) -> str:
+    s = str(col)
+    s = s.replace("‌", "")  # نیم فاصله
+    s = s.replace("_", " ")
+    s = re.sub(r"[^\w\s\u0600-\u06FF]", " ", s)  # حذف کاراکترهای عجیب (حفظ حروف فارسی)
+    s = s.strip().lower()
+    s = re.sub(r"\s+", " ", s)
+    return s
 
-# -------------------------
-# تشخیص فازی ستون‌ها
-# -------------------------
-def detect_columns(df):
-    normalized = {normalize(c): c for c in df.columns}
+def _normalize_text_for_key(s: str) -> str:
+    if pd.isna(s):
+        return ""
+    t = str(s)
+    t = t.replace("‌", "")  # نیم فاصله
+    t = t.lower().strip()
+    # حذف کاراکترهای غیر حرف/فاصله (اعداد را نگه نداریم یا کنار بگذاریم)
+    t = re.sub(r"[^\w\u0600-\u06FF\s]", " ", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    return t
 
-    mapping = {
-        "description": None,        # شرح کار
-        "previous_total": None,     # مبلغ قبلی
-        "current_total": None,      # مبلغ جدید
-        "total": None               # ستونی که عملیات اصلی روی آن انجام می‌شود
+def _to_number_series(ser: pd.Series) -> pd.Series:
+    """تبدیل ستون شامل عدد (ممکن است با ویرگول/کامای هزار جداکننده) به float/int"""
+    return pd.to_numeric(
+        ser.astype(str)
+           .str.replace(r"[,\s]", "", regex=True)
+           .str.replace("−", "-", regex=False)
+           .replace(["", "nan", "None"], "0"),
+        errors="coerce"
+    ).fillna(0)
+
+def _read_file_to_df(file: UploadFile) -> pd.DataFrame:
+    filename = file.filename or ""
+    ext = filename.lower().split(".")[-1] if "." in filename else ""
+    contents = file.file.read()
+    if not contents or len(contents) == 0:
+        raise HTTPException(status_code=400, detail=f"فایل {filename} خالی است.")
+    if len(contents) > MAX_FILE_BYTES:
+        raise HTTPException(status_code=400, detail=f"حجم فایل بیش از حد مجاز است ({MAX_FILE_BYTES} بایت).")
+
+    try:
+        if ext in ("csv",):
+            df = pd.read_csv(io.BytesIO(contents), encoding="utf-8", engine="python")
+        elif ext in ("xlsx", "xlsm", "xls"):
+            if ext in ("xlsx", "xlsm"):
+                # openpyxl معمولاً در requirements نصب می‌شود
+                df = pd.read_excel(io.BytesIO(contents), engine="openpyxl")
+            else:  # ext == 'xls'
+                try:
+                    df = pd.read_excel(io.BytesIO(contents), engine="xlrd")
+                except Exception:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="فایل .xls نیاز به نصب کتابخانه 'xlrd' دارد یا لطفاً آن را به .xlsx تبدیل کنید."
+                    )
+        else:
+            try:
+                df = pd.read_excel(io.BytesIO(contents))
+            except Exception:
+                raise HTTPException(status_code=400, detail=f"فرمت فایل {filename} پشتیبانی نمی‌شود.")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"خطا در خواندن فایل {filename}: {str(e)}")
+
+    if df is None or df.empty:
+        raise HTTPException(status_code=400, detail=f"فایل {filename} داده‌ای ندارد یا ساختارش نامناسب است.")
+    df.columns = [str(c).strip() for c in df.columns]
+    return df
+
+def detect_columns_smart(df: pd.DataFrame) -> dict:
+    """
+    تشخیص هوشمند ستون‌ها:
+      - description  : شرح/شرح کار/عنوان/آیتم
+      - amount       : مبلغ / جمع / total / price
+      - qty          : مقدار / تعداد / qty
+      - unit         : فی / نرخ / unit price
+    اگر amount پیدا نشد اما qty و unit_price هست: مبلغ محاسبه می‌شود.
+    """
+    col_map = {"description": None, "amount": None, "qty": None, "unit": None}
+    normalized = {_normalize_col_name(c): c for c in df.columns}
+
+    patterns = {
+        "description": ["شرح", "عنوان", "آیتم", "شرح کار", "subject", "description", "item", "work", "شرح_عملیات"],
+        "amount": ["مبلغ", "جمع", "total", "amount", "price", "sum", "مبلغکل", "قیمت", "مبلغ_کل"],
+        "qty": ["مقدار", "تعداد", "qty", "quantity", "حجم", "مقدار_کار"],
+        "unit": ["فی", "نرخ", "unitprice", "unit price", "rate", "priceunit", "قیمت_واحد"]
     }
 
-    for norm_key, original_name in normalized.items():
+    # مرحله ۱: تطابق مستقیم روی نام‌های نرمال شده
+    for norm_name, orig in normalized.items():
+        for key, pats in patterns.items():
+            if any(p in norm_name for p in pats):
+                if col_map[key] is None:
+                    col_map[key] = orig
 
-        # ستون شرح کار
-        if any(x in norm_key for x in ["شرح", "کار"]):
-            if mapping["description"] is None:
-                mapping["description"] = original_name
+    # مرحله ۲: fuzzy match برای نام‌های نزدیک
+    names = list(normalized.keys())
+    for key, pats in patterns.items():
+        if col_map[key] is None:
+            for p in pats:
+                matches = get_close_matches(p, names, n=1, cutoff=0.6)
+                if matches:
+                    col_map[key] = normalized[matches[0]]
+                    break
 
-        # مبلغ قبلی
-        if any(x in norm_key for x in ["قبلی", "قبل", "پیش"]):
-            if mapping["previous_total"] is None:
-                mapping["previous_total"] = original_name
+    # مرحله ۳: fallback برای شرح (اولین ستون با مقدار غیر عددی)
+    if not col_map["description"]:
+        for c in df.columns:
+            sample = df[c].astype(str).head(10).str.strip()
+            non_numeric_count = sample.apply(lambda x: bool(re.search(r"[^\d\.\,\-]", x))).sum()
+            if non_numeric_count >= 1:
+                col_map["description"] = c
+                break
 
-        # مبلغ جدید
-        if any(x in norm_key for x in ["جدید", "نو", "current"]):
-            if mapping["current_total"] is None:
-                mapping["current_total"] = original_name
+    if not col_map["description"]:
+        raise HTTPException(status_code=400, detail=f"ستون شرح/عنوان پیدا نشد. ستون‌ها: {list(df.columns)}")
 
-    # ستون شرح کار حتماً باید باشد
-    if not mapping["description"]:
-        raise HTTPException(
-            status_code=400,
-            detail=f"ستون شرح کار پیدا نشد. ستون‌های موجود: {list(df.columns)}"
-        )
+    # مرحله ۴: اگر amount نبود ولی qty و unit وجود داشت → محاسبه کن
+    if not col_map["amount"]:
+        if col_map["qty"] and col_map["unit"]:
+            df["__computed_amount__"] = _to_number_series(df[col_map["qty"]]) * _to_number_series(df[col_map["unit"]])
+            col_map["amount"] = "__computed_amount__"
+        else:
+            # اگر اصلاً قابل محاسبه نبود، مقدار صفر بزار (تا خطا ندهیم ولی خروجی خالی منطقی می‌سازد)
+            df["__computed_amount__"] = 0
+            col_map["amount"] = "__computed_amount__"
 
-    # اگر ستون مبلغ قبلی نبود، خودمان صفر می‌سازیم
-    if mapping["previous_total"] is None:
-        df["__previous__"] = 0
-        mapping["previous_total"] = "__previous__"
+    return col_map
 
-    # اگر ستون مبلغ جدید نبود، خودمان صفر می‌سازیم
-    if mapping["current_total"] is None:
-        df["__current__"] = 0
-        mapping["current_total"] = "__current__"
+def build_merge_key_column(df: pd.DataFrame, desc_col: str, new_col_name: str = "__merge_key__") -> pd.Series:
+    """ایجاد ستون کلید ادغام بر پایه شرح (نرمال‌سازی)"""
+    keys = df[desc_col].astype(str).apply(_normalize_text_for_key)
+    keys = keys.fillna("").astype(str)
+    # اگر خالی بود، مقدار یکتا براش بساز
+    empty_mask = keys.str.strip() == ""
+    if empty_mask.any():
+        # برای یکتایی از ایندکس استفاده می‌کنیم
+        keys.loc[empty_mask] = keys.loc[empty_mask].index.map(lambda i: f"__empty__{i}")
+    df[new_col_name] = keys
+    return df[new_col_name]
 
-    return mapping
-
-
-# -------------------------
-# خواندن فایل اکسل
-# -------------------------
-def load_excel(file: UploadFile):
-    if not file.filename.lower().endswith(('.xlsx', '.xls', '.csv')):
-        raise HTTPException(status_code=400, detail=f"فرمت فایل {file.filename} پشتیبانی نمی‌شود.")
-
-    contents = file.file.read()
-
-    if len(contents) == 0:
-        raise HTTPException(status_code=400, detail=f"فایل {file.filename} خالی است.")
-
-    if len(contents) > 15 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="حجم فایل بیش از ۱۵ مگابایت است.")
-
-    try:
-        df = pd.read_excel(io.BytesIO(contents))
-        if df.empty:
-            raise HTTPException(status_code=400, detail=f"فایل {file.filename} داده‌ای ندارد.")
-        return df
-
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"خطا در خواندن {file.filename}: {str(e)}")
-
-
-# -------------------------
-# API اصلی – مقایسه دو فایل
-# -------------------------
 @app.post("/api/v1/compare-sooratvaziat/")
-async def compare_soorat_vaziat(
-    previous_file: UploadFile = File(...),
-    current_file: UploadFile = File(...)
+async def compare_sooratvaziat(
+    previous_file: UploadFile = File(..., description="صورت وضعیت دوره قبل"),
+    current_file: UploadFile = File(..., description="صورت وضعیت دوره جدید")
 ):
     try:
-        df_prev = load_excel(previous_file)
-        df_curr = load_excel(current_file)
+        # خواندن فایل‌ها
+        df_prev = _read_file_to_df(previous_file)
+        df_curr = _read_file_to_df(current_file)
 
-        prev_cols = detect_columns(df_prev)
-        curr_cols = detect_columns(df_curr)
+        # تشخیص ستون‌ها بصورت هوشمند
+        prev_map = detect_columns_smart(df_prev)
+        curr_map = detect_columns_smart(df_curr)
 
-        # تنظیم ستون total برای هر فایل
-        prev_cols["total"] = prev_cols["previous_total"]
-        curr_cols["total"] = curr_cols["current_total"]
+        prev_desc = prev_map["description"]
+        prev_amount = prev_map["amount"]
+        curr_desc = curr_map["description"]
+        curr_amount = curr_map["amount"]
 
-        # تبدیل مبالغ به عدد
-        df_prev[prev_cols['total']] = pd.to_numeric(df_prev[prev_cols['total']], errors='coerce').fillna(0)
-        df_curr[curr_cols['total']] = pd.to_numeric(df_curr[curr_cols['total']], errors='coerce').fillna(0)
+        # تبدیل مقادیر مبلغ به عدد
+        df_prev[prev_amount] = _to_number_series(df_prev[prev_amount])
+        df_curr[curr_amount] = _to_number_series(df_curr[curr_amount])
 
         # مجموع‌ها
-        total_prev = df_prev[prev_cols['total']].sum()
-        total_curr = df_curr[curr_cols['total']].sum()
+        total_prev = float(df_prev[prev_amount].sum())
+        total_curr = float(df_curr[curr_amount].sum())
         diff = total_curr - total_prev
-        percent = round((diff / total_prev * 100), 2) if total_prev > 0 else 0
+        percent = round((diff / total_prev * 100), 2) if total_prev != 0 else None
 
-        # ادغام داده‌ها
+        # ساخت کلید ادغام نرمال‌شده
+        build_merge_key_column(df_prev, prev_desc, "__key_prev__")
+        build_merge_key_column(df_curr, curr_desc, "__key_curr__")
+
+        # ادغام بر اساس کلیدهای نرمال‌شده
         merged = pd.merge(
-            df_prev[[prev_cols['description'], prev_cols['total']]],
-            df_curr[[curr_cols['description'], curr_cols['total']]],
+            df_prev[[prev_desc, prev_amount, "__key_prev__"]],
+            df_curr[[curr_desc, curr_amount, "__key_curr__"]],
             how="outer",
-            left_on=prev_cols['description'],
-            right_on=curr_cols['description'],
+            left_on="__key_prev__",
+            right_on="__key_curr__",
             suffixes=("_prev", "_curr")
         ).fillna(0)
 
-        merged['تفاوت'] = merged[f"{curr_cols['total']}_curr"] - merged[f"{prev_cols['total']}_prev"]
-        merged['وضعیت'] = merged['تفاوت'].apply(
-            lambda x: "افزایش" if x > 0 else ("کاهش" if x < 0 else "بدون تغییر")
-        )
+        # کشف نام‌های واقعی ستون مبلغ در جدول merged
+        prev_amount_col = prev_amount + "_prev" if (prev_amount + "_prev") in merged.columns else prev_amount
+        curr_amount_col = curr_amount + "_curr" if (curr_amount + "_curr") in merged.columns else curr_amount
 
-        merged = merged.rename(columns={
-            prev_cols['description']: "شرح کار",
-            f"{prev_cols['total']}_prev": "مبلغ قبلی",
-            f"{curr_cols['total']}_curr": "مبلغ جدید",
+        # محاسبه تفاوت و وضعیت
+        merged["تفاوت"] = merged[curr_amount_col].astype(float) - merged[prev_amount_col].astype(float)
+        merged["وضعیت"] = merged["تفاوت"].apply(lambda x: "افزایش" if x > 0 else ("کاهش" if x < 0 else "بدون تغییر"))
+
+        # انتخاب شرح نهایی برای نمایش (ترجیح شرح دوره جدید)
+        if curr_desc in merged.columns:
+            merged["شرح_نهایی"] = merged[curr_desc].replace({0: ""}).astype(str)
+        elif prev_desc in merged.columns:
+            merged["شرح_نهایی"] = merged[prev_desc].replace({0: ""}).astype(str)
+        else:
+            merged["شرح_نهایی"] = merged.get("__key_prev__", merged.get("__key_curr__", "")).astype(str)
+
+        # نمایش مرتب‌شده
+        merged_display = merged[["شرح_نهایی", prev_amount_col, curr_amount_col, "تفاوت", "وضعیت"]].copy()
+        merged_display = merged_display.rename(columns={
+            "شرح_نهایی": "شرح کار",
+            prev_amount_col: "مبلغ قبلی",
+            curr_amount_col: "مبلغ جدید"
         })
 
-        data = merged.to_dict(orient="records")
+        # پیدا کردن آیتم‌های اضافه/حذف
+        prev_keys = set(df_prev["__key_prev__"].astype(str).unique())
+        curr_keys = set(df_curr["__key_curr__"].astype(str).unique())
+        added_keys = sorted(list(curr_keys - prev_keys))
+        removed_keys = sorted(list(prev_keys - curr_keys))
 
-        return {
+        added = []
+        removed = []
+        for k in added_keys[:50]:
+            row = df_curr[df_curr["__key_curr__"] == k]
+            if not row.empty:
+                added.append({
+                    "key": k,
+                    "title": str(row[curr_desc].astype(str).iloc[0]),
+                    "amount": float(_to_number_series(row[curr_amount]).iloc[0])
+                })
+        for k in removed_keys[:50]:
+            row = df_prev[df_prev["__key_prev__"] == k]
+            if not row.empty:
+                removed.append({
+                    "key": k,
+                    "title": str(row[prev_desc].astype(str).iloc[0]),
+                    "amount": float(_to_number_series(row[prev_amount]).iloc[0])
+                })
+
+        result = {
             "message": "success",
             "summary": {
                 "previous_sum": total_prev,
@@ -173,39 +271,36 @@ async def compare_soorat_vaziat(
                 "difference": diff,
                 "progress_percent": percent
             },
-            "items_compared": len(merged),
-            "data": data
+            "items_compared": int(len(merged_display)),
+            "added_count": len(added_keys),
+            "removed_count": len(removed_keys),
+            "added_samples": added,
+            "removed_samples": removed,
+            "data": merged_display.fillna("").to_dict(orient="records")
         }
 
+        return JSONResponse(content=result, status_code=200)
+
+    except HTTPException:
+        raise
     except Exception as e:
+        # لاگ کامل خطا برای بررسی در deploy logs
         print("🔥 SERVER ERROR:")
-        print(traceback.format_exc())
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"خطای سرور: {str(e)}")
 
-
-# -------------------------
-# Health Check
-# -------------------------
 @app.get("/api/v1/health")
 async def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "version": "3.4.0"
+        "version": "1.0.0"
     }
 
-
-# -------------------------
-# Root
-# -------------------------
 @app.get("/")
 async def root():
-    return {"message": "Metreyar API Service", "compare": "/api/v1/compare-sooratvaziat/"}
+    return {"message": "Metreyar API Service - compare-sooratvaziat", "compare": "/api/v1/compare-sooratvaziat/"}
 
-
-# -------------------------
-# اجرای Uvicorn در Render
-# -------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run("main:app", host="0.0.0.0", port=port, workers=1)
